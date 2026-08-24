@@ -1,3 +1,44 @@
+# StudySphere — Requirements & Development Guide
+
+StudySphere is an AI-Powered Collaborative Study Platform designed to provide students with a centralized workspace for studying, collaborating, managing projects, sharing resources, communicating, and improving productivity.
+
+This document is the main development and setup guide for the StudySphere team.
+
+It contains:
+
+- Development requirements
+- Local setup instructions
+- Environment configuration
+- MongoDB setup
+- Project architecture
+- Feature ownership
+- API conventions
+- Socket.io conventions
+- Database conventions
+- Git workflow
+- Security rules
+- Development checklist
+
+---
+
+# 1. Prerequisites
+
+Every team member must have the following installed:
+
+- Node.js 20+
+- npm
+- Git
+- VS Code
+- Modern web browser
+- MongoDB Atlas access
+
+Check your installation:
+
+```bash
+node -v
+npm -v
+git --version
+
 2. Technology Stack
 Frontend
 React
@@ -666,3 +707,539 @@ AI question answering
 Study assistance based on uploaded resources
 
 AI functionality should integrate with the existing StudySphere document/resource architecture.
+
+# 22. Ownership Rules
+
+Each member owns their assigned module.
+
+Do NOT rebuild another member's module without discussing it with them.
+
+Shared infrastructure should only be changed when necessary and should be discussed with the team.
+
+Shared infrastructure includes:
+
+- Authentication
+- MongoDB connection
+- API conventions
+- Socket.io connection
+- Environment configuration
+- Common utilities
+- Shared models
+- Shared components
+
+If a shared change is required, inform the other team members before modifying it.
+
+---
+
+# 23. API Convention
+
+All backend APIs should follow:
+
+```text
+/api/<resource>
+
+Examples:
+
+/api/auth
+/api/users
+/api/groups
+/api/memberships
+/api/tasks
+/api/messages
+/api/documents
+/api/focus
+/api/notifications
+/api/activity
+
+Use standard HTTP methods:
+
+GET     → Retrieve
+POST    → Create
+PUT     → Update
+DELETE  → Delete
+24. API Response Format
+
+All APIs should follow a consistent response structure.
+
+Success
+{
+  "success": true,
+  "message": "Operation successful",
+  "data": {}
+}
+Error
+{
+  "success": false,
+  "message": "Something went wrong"
+}
+25. HTTP Status Codes
+
+Use:
+
+200 → Success
+201 → Created
+400 → Bad Request
+401 → Not Authenticated
+403 → Not Authorized
+404 → Not Found
+409 → Conflict
+500 → Server Error
+
+Important distinction:
+
+401 = User is not authenticated.
+
+403 = User is authenticated but does not have permission.
+
+This distinction is especially important for:
+
+Study Groups
+Group Roles
+Protected Documents
+Document Permissions
+Admin Operations
+26. Database Naming Convention
+
+Use camelCase consistently.
+
+Recommended identifiers:
+
+userId
+groupId
+taskId
+documentId
+messageId
+sessionId
+notificationId
+createdBy
+updatedBy
+createdAt
+updatedAt
+
+Avoid inconsistent alternatives:
+
+user_id
+userid
+userID
+studentId
+group_id
+groupID
+27. Socket.io Convention
+
+StudySphere uses a shared Socket.io connection.
+
+Do NOT create separate socket connections for every feature.
+
+The primary room identifier is:
+
+groupId
+
+Example:
+
+Machine Learning
+groupId = 12345
+
+Socket room:
+
+12345
+
+The same group room can support:
+
+Chat
+Focus Rooms
+Activity
+Notifications
+Collaborative Notes
+Presence
+28. Socket Event Naming
+
+Use:
+
+domain:action
+
+Examples:
+
+chat:message
+chat:typing
+
+focus:joined
+focus:started
+focus:paused
+focus:completed
+
+notification:new
+
+activity:new
+
+task:created
+task:updated
+
+Keep event names consistent across the project.
+
+Do not create random event naming patterns such as:
+
+sendMsg
+newMessage123
+startTimerNow
+29. Frontend API Convention
+
+Use the shared Axios instance.
+
+Do NOT create a separate Axios instance for every feature.
+
+Frontend request flow:
+
+React Component
+      ↓
+API Service
+      ↓
+Axios
+      ↓
+Express API
+      ↓
+Controller
+      ↓
+Service / Business Logic
+      ↓
+MongoDB
+
+The backend URL must come from:
+
+VITE_API_URL
+
+Do not hard-code the backend URL inside individual components.
+
+30. Development UI Rule
+
+At the current development stage, functionality is more important than final UI design.
+
+Use simple:
+
+Forms
+Buttons
+Lists
+Tables
+Basic pages
+Debug interfaces
+
+to test functionality.
+
+Do not spend excessive time on final visual design before the core functionality is integrated.
+
+The final UI/UX will be improved after the major backend and feature workflows are working.
+
+31. Git Workflow
+
+Never develop directly on:
+
+main
+
+Use:
+
+develop
+
+Create a feature branch from the latest develop:
+
+git switch develop
+git pull origin develop
+git switch -c feature/<your-feature>
+
+Example:
+
+git switch -c feature/member3-productivity
+32. Commit Convention
+
+Use meaningful commit messages.
+
+Recommended prefixes:
+
+feat:
+fix:
+refactor:
+docs:
+test:
+chore:
+
+Examples:
+
+git commit -m "feat: add task CRUD APIs"
+git commit -m "feat: implement group chat socket"
+git commit -m "fix: validate group membership"
+git commit -m "docs: update API documentation"
+
+Keep commits focused.
+
+Avoid large commits containing unrelated changes.
+
+33. Push Your Branch
+
+Check your changes:
+
+git status
+
+Stage changes:
+
+git add .
+
+Commit:
+
+git commit -m "feat: description of change"
+
+Push your branch:
+
+git push origin YOUR_BRANCH_NAME
+
+Example:
+
+git push origin feature/member3-productivity
+34. Pull Request Workflow
+
+When your feature is ready:
+
+Your Feature Branch
+        ↓
+Pull Request
+        ↓
+develop
+
+Do NOT merge feature branches directly into:
+
+main
+
+All completed features should go through a Pull Request and review before being merged into develop.
+
+Before creating a PR:
+
+[ ] Feature works locally
+[ ] No console errors
+[ ] Backend APIs tested
+[ ] Frontend integration tested
+[ ] No .env files committed
+[ ] No credentials committed
+[ ] Changes are limited to the assigned feature
+35. Keeping Your Branch Updated
+
+Before starting new work:
+
+git switch develop
+git pull origin develop
+
+Return to your feature branch:
+
+git switch YOUR_BRANCH_NAME
+
+Merge the latest development changes:
+
+git merge develop
+
+Resolve conflicts before continuing development.
+
+If a conflict affects another member's module, communicate with that member before resolving it.
+
+36. Security Rules
+
+NEVER commit:
+
+.env
+.env.local
+MongoDB credentials
+JWT secrets
+AWS credentials
+API keys
+LLM API keys
+Cloud storage credentials
+
+Never hard-code secrets inside source code.
+
+Use:
+
+.env
+
+for local development.
+
+Use:
+
+.env.example
+
+for documenting required environment variables.
+
+37. Protected Document Security Rules
+
+The protected document system must follow these rules.
+
+Storage
+
+Uploaded documents must be stored in a private cloud-storage location.
+
+Do NOT expose documents through public URLs.
+
+Access
+
+Every document request must verify:
+
+JWT Authentication
+        ↓
+User Identity
+        ↓
+Group Membership
+        ↓
+Role Permission
+        ↓
+Document Permission
+        ↓
+Access Granted / Denied
+Unauthorized Users
+
+Unauthorized users must receive:
+
+403 Forbidden
+
+and must not receive the document content.
+
+Audit
+
+Important document operations should be recorded:
+
+User
+Document
+Action
+Timestamp
+
+Examples:
+
+Document Viewed
+Document Downloaded
+Document Permission Changed
+Document Uploaded
+Document Updated
+38. Important Shared Rules
+
+All team members must follow these rules.
+
+Do
+Pull the latest develop before starting work.
+Work only on your feature branch.
+Keep commits focused.
+Use consistent naming.
+Follow existing API conventions.
+Reuse shared authentication.
+Reuse the shared Axios instance.
+Reuse the shared Socket.io connection.
+Test your feature before creating a PR.
+Communicate before modifying shared infrastructure.
+Keep .env files local.
+Update documentation when introducing a major API or architecture change.
+Do Not
+Push directly to main.
+Commit .env files.
+Commit credentials.
+Rewrite another member's module.
+Create duplicate authentication systems.
+Create unnecessary Socket.io connections.
+Create inconsistent API formats.
+Rename shared models without discussion.
+Merge broken code into develop.
+Change another member's database schema without communication.
+39. First-Day Setup Checklist
+
+Every team member should complete the following:
+
+[ ] Install Node.js 20+
+[ ] Install Git
+[ ] Install VS Code
+[ ] Clone repository
+[ ] Switch to develop
+[ ] Pull latest changes
+[ ] Run npm install
+[ ] Create frontend/.env
+[ ] Create backend/.env
+[ ] Configure MongoDB
+[ ] Run npm run seed
+[ ] Confirm "MongoDB connected"
+[ ] Run npm run dev
+[ ] Open http://localhost:5173
+[ ] Test http://localhost:5000/api/health
+[ ] Create assigned feature branch
+[ ] Make a test change
+[ ] Commit the change
+[ ] Push the feature branch
+[ ] Start feature development
+40. Definition of Ready
+
+A team member is ready to start development when all of the following work:
+
+✓ Repository cloned
+✓ develop branch available
+✓ Latest develop pulled
+✓ Dependencies installed
+✓ frontend/.env configured
+✓ backend/.env configured
+✓ MongoDB connected
+✓ Seed completed
+✓ Frontend running
+✓ Backend running
+✓ /api/health working
+✓ Feature branch created
+
+Once these are complete:
+
+START DEVELOPMENT FROM YOUR ASSIGNED FEATURE BRANCH.
+41. Team Ownership Summary
+Member	Workstream
+Member 1	Identity + Groups
+Member 2	Collaboration + Communication
+Member 3	Productivity + Focus
+Member 4	Secure Resources + AI
+42. Final Development Flow
+
+The standard workflow for every team member is:
+
+Clone Repository
+       ↓
+Switch to develop
+       ↓
+Pull Latest Changes
+       ↓
+npm install
+       ↓
+Configure .env
+       ↓
+Configure MongoDB
+       ↓
+npm run seed
+       ↓
+npm run dev
+       ↓
+Verify Frontend + Backend
+       ↓
+Create Feature Branch
+       ↓
+Develop Assigned Feature
+       ↓
+Test Feature
+       ↓
+Commit Changes
+       ↓
+Push Feature Branch
+       ↓
+Create Pull Request
+       ↓
+Code Review
+       ↓
+Merge into develop
+43. Final Rule
+
+The common foundation is already established.
+
+Each member should start development from their assigned feature branch.
+
+Do not rebuild the common foundation unless the team agrees that a shared change is required.
+
+Start development from your assigned feature branch.
+
+
+### So your `REQUIREMENTS.md` is now complete
+
+The file you currently have already covers **Sections 1–21**. :contentReference[oaicite:1]{index=1}
+
+Add the above **Sections 22–43** after the existing Member 4 / AI-RAG section. That gives you the complete requirements document without needing to replace everything you've already pasted.
