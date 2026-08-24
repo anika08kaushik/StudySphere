@@ -1,0 +1,32 @@
+@import "tailwindcss";
+
+@layer utilities {
+  .neu-flat {
+    background: #e0e5ec;
+    box-shadow: 9px 9px 16px rgb(163,177,198,0.6), -9px -9px 16px rgba(255,255,255, 0.5);
+  }
+  .neu-pressed {
+    background: #e0e5ec;
+    box-shadow: inset 6px 6px 10px 0 rgba(163,177,198, 0.7), inset -6px -6px 10px 0 rgba(255,255,255, 0.8);
+  }
+  .neu-convex {
+    background: linear-gradient(145deg, #f0f5fd, #caced4);
+    box-shadow: 9px 9px 16px rgb(163,177,198,0.6), -9px -9px 16px rgba(255,255,255, 0.5);
+  }
+  .neu-concave {
+    background: linear-gradient(145deg, #caced4, #f0f5fd);
+    box-shadow: 9px 9px 16px rgb(163,177,198,0.6), -9px -9px 16px rgba(255,255,255, 0.5);
+  }
+  
+  /* Dark mode neu utilities for the abstract layout */
+  .neu-dark-flat {
+    background: rgba(255, 255, 255, 0.1);
+    box-shadow: 6px 6px 16px rgba(0,0,0,0.4), -6px -6px 16px rgba(255,255,255, 0.1);
+    backdrop-filter: blur(10px);
+  }
+  
+  .neu-dark-pressed {
+    background: rgba(0, 0, 0, 0.2);
+    box-shadow: inset 4px 4px 8px rgba(0,0,0, 0.5), inset -4px -4px 8px rgba(255,255,255, 0.05);
+  }
+}
