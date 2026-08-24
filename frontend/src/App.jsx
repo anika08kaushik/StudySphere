@@ -1,3 +1,4 @@
+import Dashboard from './pages/Dashboard'
 import { Link, Route, Routes } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext.jsx'
 import './App.css'
@@ -6,6 +7,7 @@ const Home = () => (
   <main>
     <h1>StudySphere</h1>
     <p>Shared foundation is ready.</p>
+
     <nav>
       <Link to="/login">Login</Link>
       <Link to="/register">Register</Link>
@@ -28,7 +30,7 @@ function App() {
         <Route path="/" element={<Home />} />
         <Route path="/login" element={<Placeholder title="Login" />} />
         <Route path="/register" element={<Placeholder title="Register" />} />
-        <Route path="/dashboard" element={<Placeholder title="StudySphere Dashboard" />} />
+        <Route path="/dashboard" element={<Dashboard />} />
       </Routes>
     </AuthProvider>
   )
