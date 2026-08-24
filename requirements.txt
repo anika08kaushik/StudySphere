@@ -1,0 +1,668 @@
+2. Technology Stack
+Frontend
+React
+Vite
+JavaScript
+Tailwind CSS
+React Router
+Axios
+Socket.io Client
+Backend
+Node.js
+Express.js
+MongoDB
+Mongoose
+JWT
+bcrypt
+Socket.io
+Database
+MongoDB Atlas
+Planned / Feature-Specific Technologies
+AWS S3 / Firebase Storage
+Yjs
+Redis
+AI / RAG
+Vector Database
+Docker
+Development
+Git
+GitHub
+npm
+VS Code
+3. Clone the Repository
+
+Clone the repository:
+
+git clone https://github.com/anika08kaushik/StudySphere.git
+
+Enter the project:
+
+cd StudySphere
+4. Switch to the Development Branch
+
+Do NOT develop directly on main.
+
+The shared development branch is:
+
+develop
+
+Switch to it:
+
+git switch develop
+
+Pull the latest changes:
+
+git pull origin develop
+
+Branch structure:
+
+main
+  ↑
+develop
+  ↑
+feature/<your-feature>
+5. Install Dependencies
+
+From the project root:
+
+npm install
+
+The project is configured so the frontend and backend dependencies can be managed from the root.
+
+Normally, you do NOT need to run npm install separately inside frontend and backend.
+
+If necessary, dependencies can be installed individually.
+
+Frontend
+cd frontend
+npm install
+Backend
+cd ../backend
+npm install
+
+Return to the project root:
+
+cd ..
+6. Environment Variables
+
+StudySphere uses separate environment files for the frontend and backend.
+
+Environment files contain local configuration and sensitive credentials.
+
+IMPORTANT
+
+Never commit:
+
+.env
+.env.local
+
+to GitHub.
+
+The repository contains .env.example files showing the required variables.
+
+7. Frontend Environment
+
+Create:
+
+frontend/.env
+
+Add:
+
+VITE_API_URL=http://localhost:5000/api
+
+This tells the React application where the StudySphere backend API is running.
+
+8. Backend Environment
+
+Create:
+
+backend/.env
+
+Add:
+
+PORT=5000
+
+MONGO_URI=YOUR_MONGODB_CONNECTION_STRING
+
+JWT_SECRET=YOUR_LOCAL_JWT_SECRET
+
+CLIENT_URL=http://localhost:5173
+
+Ask the project owner/team lead for the development MongoDB access details.
+
+Never commit the actual values to GitHub.
+
+9. MongoDB Atlas Setup
+
+StudySphere uses MongoDB Atlas as the development database.
+
+Development database:
+
+studysphere-dev
+
+The backend connects to MongoDB using:
+
+MONGO_URI
+
+inside:
+
+backend/.env
+
+Example structure:
+
+MONGO_URI=mongodb+srv://USERNAME:PASSWORD@CLUSTER.mongodb.net/studysphere-dev
+
+The actual credentials must remain private.
+
+Do NOT put MongoDB credentials in:
+
+GitHub
+README.md
+REQUIREMENTS.md
+.env.example
+Source code
+Screenshots
+Public documentation
+10. Verify MongoDB Connection
+
+After configuring:
+
+backend/.env
+
+run:
+
+cd backend
+npm run seed
+
+A successful setup should display:
+
+MongoDB connected
+Seed data created done
+
+Return to the project root:
+
+cd ..
+
+The seed script creates development/test data.
+
+IMPORTANT
+
+The seed script is for development only.
+
+Never run the seed script against a production database.
+
+11. Start the Application
+
+From the project root:
+
+npm run dev
+
+This starts both the frontend and backend development servers.
+
+Expected:
+
+Frontend:
+http://localhost:5173
+
+Backend:
+http://localhost:5000
+12. Verify the Backend
+
+Open:
+
+http://localhost:5000/api/health
+
+Expected response:
+
+{
+  "success": true,
+  "message": "StudySphere API is running"
+}
+
+If this response appears, the backend is running correctly.
+
+13. Verify the Frontend
+
+Open:
+
+http://localhost:5173
+
+The StudySphere React application should load.
+
+Current development routes include:
+
+/
+ /login
+ /register
+ /dashboard
+
+The frontend is intentionally minimal during the initial development stage.
+
+The current development priority is:
+
+Frontend
+    ↓
+API
+    ↓
+Backend
+    ↓
+Database
+    ↓
+Working Functionality
+
+The final UI/UX will be developed alongside feature integration.
+
+14. Project Architecture
+
+The overall StudySphere architecture is:
+
+                         STUDYSPHERE
+                              │
+              ┌───────────────┴───────────────┐
+              │                               │
+              ▼                               ▼
+       REACT FRONTEND                   BACKEND SERVER
+       React + Vite                     Node.js + Express
+       Tailwind CSS                     JWT + bcrypt
+       React Router                     REST APIs
+       Axios                            Socket.io
+              │                               │
+        ┌─────┼──────┐                  ┌─────┼──────┐
+        │     │      │                  │     │      │
+        ▼     ▼      ▼                  ▼     ▼      ▼
+   Dashboard Groups Chat              REST  Socket   Auth
+                                   APIs    Engine
+                                               │
+                                               ▼
+                                      BUSINESS LOGIC
+                                               │
+                         ┌─────────────────────┼──────────────────┐
+                         │                     │                  │
+                         ▼                     ▼                  ▼
+                      MongoDB              Redis*          Cloud Storage
+                       Atlas               Optional        AWS S3/Firebase
+                         │                                      │
+                         │                              Private Bucket
+                         │                              No Public URL
+                         │                                      │
+                         └──────────────────┬───────────────────┘
+                                            │
+                                            ▼
+                                   PROTECTED DOCUMENT
+                                        SYSTEM
+                                            │
+                                            ▼
+                                     ACCESS CONTROL
+                                            │
+                               ┌────────────┴────────────┐
+                               │                         │
+                               ▼                         ▼
+                        AUTHORIZED USER          UNAUTHORIZED USER
+                               │                         │
+                               ▼                         ▼
+                      STUDYSPHERE VIEWER              DENIED
+                               │
+                               ▼
+                           AUDIT LOG
+15. Architecture Responsibilities
+React Frontend
+
+Responsible for:
+
+User interface
+Dashboard
+Study groups
+Chat interface
+Task interface
+Focus rooms
+Document viewer
+API communication
+Client-side routing
+Frontend state management
+Backend Server
+
+Responsible for:
+
+REST APIs
+Authentication
+Authorization
+Business logic
+Database operations
+File access control
+Socket.io
+Notifications
+Activity processing
+MongoDB Atlas
+
+Stores application data and metadata such as:
+
+Users
+Study groups
+Memberships
+Tasks
+Messages
+Documents
+Focus sessions
+Notifications
+Activity logs
+Cloud Storage
+
+Stores actual uploaded files.
+
+MongoDB stores the metadata required to identify and manage those files.
+
+The storage bucket must remain private.
+
+Redis
+
+Optional infrastructure for:
+
+Socket.io scaling
+Presence
+Caching
+Session state
+16. Protected Document System
+
+The protected document system is one of StudySphere's main differentiating features.
+
+The objective is to ensure that shared academic documents are accessed through StudySphere rather than through publicly accessible file URLs.
+
+Flow:
+
+Upload Document
+      ↓
+Private Cloud Storage
+AWS S3 / Firebase
+      ↓
+NO PUBLIC FILE URL
+      ↓
+MongoDB Metadata
+      ↓
+StudySphere API
+      ↓
+Authorization Check
+      ↓
+┌───────────────┴───────────────┐
+│                               │
+▼                               ▼
+AUTHORIZED USER          UNAUTHORIZED USER
+│                               │
+▼                               ▼
+ACCESS GRANTED                 DENIED
+│
+▼
+StudySphere Viewer
+│
+├── View Document
+├── Page Navigation
+├── Search
+├── Zoom
+├── Dynamic Watermark
+├── Access Tracking
+└── Audit Logging
+
+Access control uses:
+
+JWT Authentication
+        +
+Study Group Membership
+        +
+Role Permissions
+        +
+Document Permissions
+
+Unauthorized users:
+
+ACCESS DENIED
+
+Authorized users:
+
+STUDYSPHERE VIEWER
+17. Team Development Structure
+
+The project is divided into four independent workstreams.
+
+                    STUDYSPHERE
+                         │
+             COMMON FOUNDATION
+                         │
+       ┌─────────────────┼─────────────────┐
+       │                 │                 │
+       ▼                 ▼                 ▼
+    MEMBER 1          MEMBER 2          MEMBER 3
+    Identity          Collaboration    Productivity
+    + Groups          + Communication   + Focus
+       │                 │                 │
+       └─────────────────┼─────────────────┘
+                         │
+                         ▼
+                      MEMBER 4
+                 Secure Resources + AI
+
+Each member works primarily inside their assigned feature area.
+
+18. Member 1 — Identity & Groups
+
+Create the branch:
+
+git switch develop
+git pull origin develop
+git switch -c feature/member1-identity-groups
+Responsibilities
+Authentication
+Registration
+Login
+Logout
+JWT authentication
+Password hashing
+Authentication middleware
+Protected routes
+Users
+User profiles
+Profile editing
+Profile photo
+Department
+Semester
+Skills
+Bio
+Study statistics
+Study Groups
+Create group
+View groups
+Update group
+Delete group
+Join group
+Leave group
+Group settings
+Memberships & Roles
+Group membership
+Student role
+Group Leader role
+Administrator role
+Group invitations
+Member management
+Permissions
+19. Member 2 — Collaboration & Communication
+
+Create the branch:
+
+git switch develop
+git pull origin develop
+git switch -c feature/member2-collaboration
+Responsibilities
+Real-Time Communication
+Socket.io
+Group chat
+Online/offline presence
+Typing indicators
+Message delivery
+Message search
+Chat
+Text messages
+Replies
+Mentions
+Emoji reactions
+File sharing
+Pinned messages
+Collaborative Notes
+Shared notes
+Real-time editing
+Multiple users editing simultaneously
+Cursor/presence information
+Auto-save
+Comments
+Mentions
+Version history
+Note permissions
+Export functionality
+Notifications
+Task assignments
+Chat mentions
+Document comments
+Note updates
+Focus session completion
+Group invitations
+Upcoming deadlines
+Activity Feed
+
+Examples:
+
+Anika created an assignment.
+
+Rahul uploaded CNN.pdf.
+
+Aryan completed Task #5.
+
+Riya joined a focus session.
+20. Member 3 — Productivity & Focus
+
+Create the branch:
+
+git switch develop
+git pull origin develop
+git switch -c feature/member3-productivity
+Responsibilities
+Tasks
+Create task
+Update task
+Delete task
+Assign task
+Task description
+Priority
+Deadline
+Checklist
+Comments
+Attachments
+Kanban Board
+
+Columns:
+
+To Do
+In Progress
+Review
+Completed
+
+Features:
+
+Drag and drop
+Task filtering
+Deadline reminders
+Progress tracking
+Focus Rooms
+Create/join focus room
+Start Pomodoro
+Pause timer
+Stop timer
+Shared room timer
+Current participants
+Online status
+Session completion
+Productivity Tracking
+
+Track:
+
+Daily focus time
+Weekly focus time
+Total focus hours
+Sessions completed
+Current streak
+Longest streak
+Dashboard
+
+Productivity-related dashboard features:
+
+Today's study hours
+Active focus room
+Upcoming deadlines
+Pending tasks
+Calendar events
+Productivity statistics
+Calendar
+Study events
+Deadlines
+Task dates
+Calendar integration
+21. Member 4 — Secure Resources & AI
+
+Create the branch:
+
+git switch develop
+git pull origin develop
+git switch -c feature/member4-resources-ai
+Responsibilities
+Resource Locker
+File upload
+Folder creation
+Folder organization
+File search
+Tags
+File preview
+Download tracking
+Storage usage
+
+Supported files:
+
+PDF
+PPT
+DOCX
+Images
+ZIP
+Videos
+Protected Documents
+
+Implement the protected document system described in Section 16.
+
+Responsibilities include:
+
+Private cloud storage
+Document metadata
+Document permissions
+Access control
+StudySphere viewer
+Dynamic watermarking
+Access tracking
+Download tracking
+Audit logs
+Document Management
+Document permissions
+Document versioning
+Document metadata
+Access history
+Download tracking
+Audit logs
+AI / RAG
+
+Implement AI-powered study features around the StudySphere resource system.
+
+Potential components:
+
+Document ingestion
+Text extraction
+Chunking
+Embeddings
+Vector search
+Retrieval
+AI question answering
+Study assistance based on uploaded resources
+
+AI functionality should integrate with the existing StudySphere document/resource architecture.

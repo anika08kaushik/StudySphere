@@ -1,17 +1,107 @@
 # StudySphere
 
-StudySphere is a collaborative study platform built with React, Express, MongoDB, and Socket.io.
+## AI-Powered Collaborative Study Platform
 
-## Local development
+StudySphere is an all-in-one collaborative study and productivity platform designed specifically for students.
 
-1. Copy `frontend/.env.example` to `frontend/.env`.
-2. Copy `backend/.env.example` to `backend/.env` and set `MONGO_URI` and `JWT_SECRET`.
-3. Run `npm install` in `frontend` and `backend`.
-4. Run `npm run dev` in each folder.
-5. Open `http://localhost:5173` and verify `http://localhost:5000/api/health`.
+It brings study groups, collaborative notes, secure document sharing, resource management, project management, communication, focus sessions, productivity tracking, and AI-powered study assistance into one centralized academic workspace.
 
-The backend can start without MongoDB for health-endpoint work, but model and seed operations require a valid Atlas URI.
+---
 
-## Branch workflow
+# Features
 
-Use `develop` as the shared integration branch. Create feature branches from it and open pull requests back into `develop`. See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for team rules and [docs/API.md](docs/API.md) for API conventions.
+- 👥 Study Groups
+- 📝 Real-Time Collaborative Notes
+- 🔐 Protected Document Sharing
+- 📁 Shared Resource Locker
+- 📋 Kanban Project Management
+- 💬 Group Chat
+- ⏱️ Virtual Focus Rooms
+- 📊 Productivity Tracking
+- 🔔 Notifications
+- 📰 Activity Feed
+- 🤖 AI-Powered Study Assistance
+- 📅 Academic Calendar
+- 🏫 Campus Study Room Booking *(planned/optional)*
+
+---
+
+# Tech Stack
+
+## Frontend
+
+- React
+- Vite
+- JavaScript
+- Tailwind CSS
+- React Router
+- Axios
+- Socket.io Client
+
+## Backend
+
+- Node.js
+- Express.js
+- MongoDB
+- Mongoose
+- JWT
+- bcrypt
+- Socket.io
+
+## Database
+
+- MongoDB Atlas
+
+## Development
+
+- Git
+- GitHub
+- npm
+- VS Code
+
+## Planned / Feature-Specific Technologies
+
+- AWS S3 / Firebase Storage
+- Yjs
+- Redis
+- AI / RAG
+- Vector Database
+- Docker
+
+---
+
+# Project Architecture
+
+```text
+                         STUDYSPHERE
+                              │
+              ┌───────────────┴───────────────┐
+              │                               │
+              ▼                               ▼
+       REACT FRONTEND                   BACKEND SERVER
+       React + Vite                     Node.js + Express
+       Tailwind CSS                     JWT + bcrypt
+       React Router                     REST APIs
+       Axios                            Socket.io
+              │                               │
+              │                               │
+              ▼                               ▼
+        ┌──────────────┐              ┌─────────────────┐
+        │  Dashboard   │              │ Authentication  │
+        │ Study Groups │              │ Business Logic  │
+        │ Chat         │              │ REST APIs       │
+        │ Documents    │              │ Real-Time Engine│
+        └──────────────┘              └────────┬────────┘
+                                               │
+                                               ▼
+                                        ┌──────────────┐
+                                        │   MongoDB    │
+                                        │    Atlas     │
+                                        │              │
+                                        │ Users        │
+                                        │ Groups       │
+                                        │ Tasks        │
+                                        │ Messages     │
+                                        │ Documents    │
+                                        │ Sessions     │
+                                        └──────────────┘
