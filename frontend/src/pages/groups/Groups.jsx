@@ -1,18 +1,20 @@
 import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import api from '../../services/api'
 
 export default function Groups() {
   const [groupList, setGroupList] = useState([])
   const [search, setSearch] = useState('')
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [joinModalGroup, setJoinModalGroup] = useState(null)
   const [loading, setLoading] = useState(true)
+  const navigate = useNavigate()
 
   useEffect(() => {
     const fetchGroups = async () => {
       try {
         const res = await api.get('/groups')
-        setGroupList(res.data.groups)
+        setGroupList(res.data.data || res.data.groups || [])
       } catch (error) {
         console.error('Failed to fetch groups', error)
       } finally {
@@ -40,7 +42,7 @@ export default function Groups() {
       })
       
       const newGroup = {
-        ...res.data.group,
+        ...res.data.data,
         memberCount: 1,
         joined: true,
         shortName: newGroupName.slice(0, 3).toUpperCase(),
@@ -64,9 +66,9 @@ export default function Groups() {
 
     try {
       if (isJoined) {
-        await api.post(`/groups/${groupId}/leave`)
+        await api.post('/groups/leave', { groupId })
       } else {
-        await api.post(`/groups/${groupId}/join`)
+        await api.post('/groups/join', { groupId })
       }
 
       setGroupList((prev) =>
@@ -133,8 +135,16 @@ export default function Groups() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         {filtered.map((group) => {
           const shortName = group.name.slice(0, 3).toUpperCase()
+          
+          const handleGroupClick = (e) => {
+            if (!group.joined) {
+              e.preventDefault()
+              setJoinModalGroup(group)
+            }
+          }
+
           return (
-            <Link key={group._id} to={`/groups/${group._id}`}>
+            <Link key={group._id} to={`/groups/${group._id}`} onClick={handleGroupClick}>
               <div className="card-soft overflow-hidden hover:border-[#9B7EDB] transition-all flex flex-col h-full group bg-white">
                 {/* Banner */}
                 <div className="h-24 bg-gradient-to-br from-[#E9DFFF] via-[#F3ECFE] to-[#FDF5F1] relative p-4 flex items-center justify-between border-b border-[#E8E0F2]">
@@ -250,6 +260,44 @@ export default function Groups() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Join Group Modal */}
+      {joinModalGroup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#493A63]/30 backdrop-blur-sm">
+          <div className="card-soft p-6 bg-white border-[#E8E0F2] max-w-md w-full shadow-xl text-center">
+            <div className="w-16 h-16 rounded-2xl bg-[#F8F5FF] border border-[#E8E0F2] flex items-center justify-center mx-auto mb-4 shadow-xs">
+              <span className="text-2xl font-extrabold text-[#493A63]">
+                {joinModalGroup.name.slice(0, 3).toUpperCase()}
+              </span>
+            </div>
+            
+            <h2 className="text-xl font-bold text-[#493A63] mb-2">{joinModalGroup.name}</h2>
+            <p className="text-sm text-[#776B88] mb-6 font-medium">
+              To explore this group, you need to join it first. By joining, you'll get access to the group's workspace, study sessions, and community chat.
+            </p>
+            
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={async () => {
+                  const dummyEvent = { preventDefault: () => {}, stopPropagation: () => {} }
+                  await toggleJoin(joinModalGroup._id, false, dummyEvent)
+                  setJoinModalGroup(null)
+                  navigate(`/groups/${joinModalGroup._id}`)
+                }}
+                className="w-full px-5 py-3 rounded-xl bg-[#9B7EDB] hover:bg-[#7A58C1] text-white font-bold shadow-xs transition-all text-sm"
+              >
+                Join Group Now
+              </button>
+              <button
+                onClick={() => setJoinModalGroup(null)}
+                className="w-full px-5 py-3 rounded-xl bg-[#F8F5FF] hover:bg-[#E9DFFF] text-[#493A63] font-bold transition-all text-sm"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}
