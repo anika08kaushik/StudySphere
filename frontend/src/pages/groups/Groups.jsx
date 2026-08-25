@@ -42,7 +42,7 @@ export default function Groups() {
       })
       
       const newGroup = {
-        ...res.data.group,
+        ...res.data.data,
         memberCount: 1,
         joined: true,
         shortName: newGroupName.slice(0, 3).toUpperCase(),
