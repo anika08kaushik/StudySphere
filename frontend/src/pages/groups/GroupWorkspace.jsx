@@ -40,8 +40,8 @@ export default function GroupWorkspace() {
     const fetchGroup = async () => {
       try {
         const res = await api.get(`/groups/${groupId}`)
-        setGroup(res.data.group)
-        setMembers(res.data.members.map(m => m.userId))
+        setGroup(res.data.data.group)
+        setMembers(res.data.data.members)
       } catch (error) {
         console.error('Failed to fetch group details', error)
       } finally {
