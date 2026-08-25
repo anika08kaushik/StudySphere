@@ -1,0 +1,9 @@
+export const users = [
+  { _id: 'u1', name: 'Anika Kaushik', email: 'anika@university.edu', department: 'Computer Science', semester: 6, skills: ['Java', 'React', 'ML', 'AI'], bio: 'Full-stack developer interested in AI/ML', profilePhoto: null, isOnline: true, status: 'focusing', lastSeen: '2026-08-25T09:30:00Z', focusStreak: 12, totalFocusMinutes: 2535, avatarColor: 'purple', groups: ['g1', 'g2', 'g3'] },
+  { _id: 'u2', name: 'Rahul Sharma', email: 'rahul@university.edu', department: 'Computer Science', semester: 6, skills: ['Python', 'TensorFlow', 'CNN', 'Data Science'], bio: 'ML enthusiast and data science explorer', profilePhoto: null, isOnline: true, status: 'online', lastSeen: '2026-08-25T09:25:00Z', focusStreak: 8, totalFocusMinutes: 1820, avatarColor: 'blue', groups: ['g1', 'g2'] },
+  { _id: 'u3', name: 'Riya Patel', email: 'riya@university.edu', department: 'Computer Science', semester: 6, skills: ['UI/UX', 'Figma', 'React', 'Node.js'], bio: 'Design-minded developer', profilePhoto: null, isOnline: true, status: 'online', lastSeen: '2026-08-25T09:20:00Z', focusStreak: 5, totalFocusMinutes: 1340, avatarColor: 'pink', groups: ['g1', 'g3'] },
+  { _id: 'u4', name: 'Karan Mehta', email: 'karan@university.edu', department: 'Computer Science', semester: 6, skills: ['C++', 'DSA', 'OS', 'DBMS'], bio: 'Systems and algorithms enthusiast', profilePhoto: null, isOnline: true, status: 'away', lastSeen: '2026-08-25T09:15:00Z', focusStreak: 3, totalFocusMinutes: 980, avatarColor: 'green', groups: ['g1'] },
+  { _id: 'u5', name: 'Aryan Singh', email: 'aryan@university.edu', department: 'Computer Science', semester: 6, skills: ['Python', 'Flask', 'MongoDB', 'REST APIs'], bio: 'Backend developer and API architect', profilePhoto: null, isOnline: false, status: 'offline', lastSeen: '2026-08-24T22:00:00Z', focusStreak: 0, totalFocusMinutes: 560, avatarColor: 'orange', groups: ['g1', 'g3'] },
+]
+
+export const currentUser = users[0]
