@@ -1,13 +1,13 @@
 import express from 'express'
-import { getProfile, updateProfile } from '../controllers/userController.js'
 import authenticate from '../middleware/authMiddleware.js'
+import {
+  getProfile,
+  updateProfile,
+} from '../controllers/userController.js'
 
 const router = express.Router()
 
-// All user routes should be protected
-router.use(authenticate)
-
-router.get('/profile', getProfile)
-router.put('/profile', updateProfile)
+router.get('/profile', authenticate, getProfile)
+router.put('/profile', authenticate, updateProfile)
 
 export default router

@@ -1,229 +1,206 @@
-import StudyGroup from '../models/StudyGroup.js'
+import mongoose from 'mongoose'
 import Membership from '../models/Membership.js'
+import StudyGroup from '../models/StudyGroup.js'
 
-export const createGroup = async (req, res) => {
+const userFields = 'name email department semester skills bio profilePhoto'
+
+export const createGroup = async (request, response) => {
   try {
-    const { name, description, subjects, coverImage } = req.body
+    const { name, description, subjects, coverImage } = request.body
 
-    if (!name) {
-      return res.status(400).json({ success: false, message: 'Group name is required' })
+    if (!name || !name.trim()) {
+      return response.status(400).json({
+        success: false,
+        message: 'Group name is required',
+      })
     }
 
     const group = await StudyGroup.create({
-      name,
+      name: name.trim(),
       description,
       subjects,
       coverImage,
-      createdBy: req.user.id
+      createdBy: request.user.userId,
     })
 
-    // Automatically add the creator as a leader
     await Membership.create({
-      userId: req.user.id,
+      userId: request.user.userId,
       groupId: group._id,
       role: 'leader',
-      status: 'active'
     })
 
-    res.status(201).json({ success: true, group })
+    return response.status(201).json({
+      success: true,
+      message: 'Group created successfully',
+      data: group,
+    })
   } catch (error) {
     console.error('Create group error:', error)
-    res.status(500).json({ success: false, message: 'Server error' })
+
+    return response.status(500).json({
+      success: false,
+      message: 'Unable to create group',
+    })
   }
 }
 
-export const getGroup = async (req, res) => {
+export const getMyGroups = async (request, response) => {
   try {
-    const { groupId } = req.params
-    const group = await StudyGroup.findById(groupId).populate('createdBy', 'name email profilePhoto')
-    
-    if (!group) {
-      return res.status(404).json({ success: false, message: 'Group not found' })
+    const memberships = await Membership.find({
+      userId: request.user.userId,
+      status: 'active',
+    }).populate('groupId')
+
+    const groups = memberships
+      .filter((membership) => membership.groupId)
+      .map((membership) => ({
+        id: membership.groupId._id,
+        name: membership.groupId.name,
+        description: membership.groupId.description,
+        subjects: membership.groupId.subjects,
+        coverImage: membership.groupId.coverImage,
+        createdBy: membership.groupId.createdBy,
+        role: membership.role,
+      }))
+
+    return response.status(200).json({
+      success: true,
+      data: groups,
+    })
+  } catch (error) {
+    console.error('Get groups error:', error)
+
+    return response.status(500).json({
+      success: false,
+      message: 'Unable to get groups',
+    })
+  }
+}
+
+export const getGroupById = async (request, response) => {
+  try {
+    const { id } = request.params
+
+    if (!mongoose.isValidObjectId(id)) {
+      return response.status(400).json({
+        success: false,
+        message: 'Invalid group ID',
+      })
     }
 
-    const members = await Membership.find({ groupId, status: 'active' }).populate('userId', 'name email profilePhoto')
+    const membership = await Membership.findOne({
+      userId: request.user.userId,
+      groupId: id,
+      status: 'active',
+    })
 
-    res.status(200).json({ success: true, group, members })
+    if (!membership) {
+      return response.status(403).json({
+        success: false,
+        message: 'You must be a member of this group',
+      })
+    }
+
+    const [group, members] = await Promise.all([
+      StudyGroup.findById(id).populate('createdBy', userFields),
+      Membership.find({ groupId: id, status: 'active' }).populate('userId', userFields),
+    ])
+
+    if (!group) {
+      return response.status(404).json({
+        success: false,
+        message: 'Group not found',
+      })
+    }
+
+    return response.status(200).json({
+      success: true,
+      data: {
+        group,
+        membership: {
+          role: membership.role,
+          status: membership.status,
+        },
+        members: members
+          .filter((entry) => entry.userId)
+          .map((entry) => ({
+            id: entry.userId._id,
+            name: entry.userId.name,
+            email: entry.userId.email,
+            department: entry.userId.department,
+            semester: entry.userId.semester,
+            skills: entry.userId.skills,
+            bio: entry.userId.bio,
+            profilePhoto: entry.userId.profilePhoto,
+            role: entry.role,
+          })),
+      },
+    })
   } catch (error) {
     console.error('Get group error:', error)
-    res.status(500).json({ success: false, message: 'Server error' })
+
+    return response.status(500).json({
+      success: false,
+      message: 'Unable to get group',
+    })
   }
 }
 
-export const getAllGroups = async (req, res) => {
+export const joinGroup = async (request, response) => {
   try {
-    const groups = await StudyGroup.find().populate('createdBy', 'name email profilePhoto')
-    
-    // For each group, we should probably fetch the memberships to know the member count, 
-    // or just return the groups for now. We will fetch memberships for all groups.
-    const memberships = await Membership.find({ status: 'active' })
-    
-    // Attach member count and joined status for the current user to each group
-    const groupsWithStats = groups.map(group => {
-      const groupMemberships = memberships.filter(m => String(m.groupId) === String(group._id))
-      const isJoined = groupMemberships.some(m => String(m.userId) === String(req.user.id))
-      return {
-        ...group.toObject(),
-        memberCount: groupMemberships.length,
-        joined: isJoined
-      }
+    const { groupId } = request.body
+
+    if (!groupId || !mongoose.isValidObjectId(groupId)) {
+      return response.status(400).json({
+        success: false,
+        message: 'A valid group ID is required',
+      })
+    }
+
+    const group = await StudyGroup.findById(groupId)
+    if (!group) {
+      return response.status(404).json({
+        success: false,
+        message: 'Group not found',
+      })
+    }
+
+    const existingMembership = await Membership.findOne({
+      userId: request.user.userId,
+      groupId,
     })
 
-    res.status(200).json({ success: true, groups: groupsWithStats })
-  } catch (error) {
-    console.error('Get all groups error:', error)
-    res.status(500).json({ success: false, message: 'Server error' })
-  }
-}
-
-export const updateGroup = async (req, res) => {
-  try {
-    const { groupId } = req.params
-    const { name, description, subjects, coverImage } = req.body
-
-    // Check if user is leader
-    const membership = await Membership.findOne({ groupId, userId: req.user.id, role: 'leader' })
-    if (!membership) {
-      return res.status(403).json({ success: false, message: 'Only leaders can update the group' })
-    }
-
-    const group = await StudyGroup.findByIdAndUpdate(
-      groupId,
-      { name, description, subjects, coverImage },
-      { new: true, runValidators: true }
-    )
-
-    if (!group) {
-      return res.status(404).json({ success: false, message: 'Group not found' })
-    }
-
-    res.status(200).json({ success: true, group })
-  } catch (error) {
-    console.error('Update group error:', error)
-    res.status(500).json({ success: false, message: 'Server error' })
-  }
-}
-
-export const deleteGroup = async (req, res) => {
-  try {
-    const { groupId } = req.params
-
-    // Check if user is leader
-    const membership = await Membership.findOne({ groupId, userId: req.user.id, role: 'leader' })
-    if (!membership) {
-      return res.status(403).json({ success: false, message: 'Only leaders can delete the group' })
-    }
-
-    const group = await StudyGroup.findByIdAndDelete(groupId)
-    if (!group) {
-      return res.status(404).json({ success: false, message: 'Group not found' })
-    }
-
-    // Delete all memberships for this group
-    await Membership.deleteMany({ groupId })
-
-    res.status(200).json({ success: true, message: 'Group deleted successfully' })
-  } catch (error) {
-    console.error('Delete group error:', error)
-    res.status(500).json({ success: false, message: 'Server error' })
-  }
-}
-
-export const joinGroup = async (req, res) => {
-  try {
-    const { groupId } = req.params
-
-    const existingMembership = await Membership.findOne({ groupId, userId: req.user.id })
     if (existingMembership) {
-      return res.status(400).json({ success: false, message: 'You are already a member of this group' })
+      return response.status(409).json({
+        success: false,
+        message: 'You already belong to this group',
+      })
     }
 
     const membership = await Membership.create({
-      userId: req.user.id,
+      userId: request.user.userId,
       groupId,
       role: 'student',
-      status: 'active'
     })
 
-    res.status(201).json({ success: true, message: 'Joined group successfully', membership })
+    return response.status(201).json({
+      success: true,
+      message: 'Joined group successfully',
+      data: membership,
+    })
   } catch (error) {
+    if (error.code === 11000) {
+      return response.status(409).json({
+        success: false,
+        message: 'You already belong to this group',
+      })
+    }
+
     console.error('Join group error:', error)
-    res.status(500).json({ success: false, message: 'Server error' })
-  }
-}
 
-export const leaveGroup = async (req, res) => {
-  try {
-    const { groupId } = req.params
-
-    const membership = await Membership.findOneAndDelete({ groupId, userId: req.user.id })
-    if (!membership) {
-      return res.status(404).json({ success: false, message: 'You are not a member of this group' })
-    }
-
-    res.status(200).json({ success: true, message: 'Left group successfully' })
-  } catch (error) {
-    console.error('Leave group error:', error)
-    res.status(500).json({ success: false, message: 'Server error' })
-  }
-}
-
-export const inviteMember = async (req, res) => {
-  try {
-    const { groupId } = req.params
-    const { userId } = req.body
-
-    if (!userId) {
-      return res.status(400).json({ success: false, message: 'User ID is required' })
-    }
-
-    // Check if requester is leader
-    const requesterMembership = await Membership.findOne({ groupId, userId: req.user.id, role: 'leader' })
-    if (!requesterMembership) {
-      return res.status(403).json({ success: false, message: 'Only leaders can invite members' })
-    }
-
-    const existingMembership = await Membership.findOne({ groupId, userId })
-    if (existingMembership) {
-      return res.status(400).json({ success: false, message: 'User is already a member' })
-    }
-
-    const membership = await Membership.create({
-      userId,
-      groupId,
-      role: 'student',
-      status: 'active'
+    return response.status(500).json({
+      success: false,
+      message: 'Unable to join group',
     })
-
-    res.status(201).json({ success: true, message: 'User invited successfully', membership })
-  } catch (error) {
-    console.error('Invite member error:', error)
-    res.status(500).json({ success: false, message: 'Server error' })
-  }
-}
-
-export const removeMember = async (req, res) => {
-  try {
-    const { groupId, userId } = req.params
-
-    // Check if requester is leader
-    const requesterMembership = await Membership.findOne({ groupId, userId: req.user.id, role: 'leader' })
-    if (!requesterMembership) {
-      return res.status(403).json({ success: false, message: 'Only leaders can remove members' })
-    }
-
-    if (userId === req.user.id) {
-        return res.status(400).json({ success: false, message: 'You cannot remove yourself using this endpoint' })
-    }
-
-    const membership = await Membership.findOneAndDelete({ groupId, userId })
-    if (!membership) {
-      return res.status(404).json({ success: false, message: 'User is not a member of this group' })
-    }
-
-    res.status(200).json({ success: true, message: 'User removed successfully' })
-  } catch (error) {
-    console.error('Remove member error:', error)
-    res.status(500).json({ success: false, message: 'Server error' })
   }
 }

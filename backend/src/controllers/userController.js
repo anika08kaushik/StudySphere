@@ -1,37 +1,82 @@
 import User from '../models/User.js'
 
-export const getProfile = async (req, res) => {
+const profileFields = 'name email department semester skills bio profilePhoto'
+
+export const getProfile = async (request, response) => {
   try {
-    const user = await User.findById(req.user.id)
+    const user = await User.findById(request.user.userId).select(profileFields)
+
     if (!user) {
-      return res.status(404).json({ success: false, message: 'User not found' })
+      return response.status(404).json({
+        success: false,
+        message: 'User not found',
+      })
     }
-    res.status(200).json({ success: true, user })
+
+    return response.status(200).json({
+      success: true,
+      data: user,
+    })
   } catch (error) {
     console.error('Get profile error:', error)
-    res.status(500).json({ success: false, message: 'Server error' })
+
+    return response.status(500).json({
+      success: false,
+      message: 'Unable to get profile',
+    })
   }
 }
 
-export const updateProfile = async (req, res) => {
+export const updateProfile = async (request, response) => {
   try {
-    const allowedUpdates = ['name', 'department', 'semester', 'skills', 'bio', 'profilePhoto']
-    const updates = {}
-    
-    Object.keys(req.body).forEach(key => {
-      if (allowedUpdates.includes(key)) {
-        updates[key] = req.body[key]
-      }
-    })
+    const {
+      name,
+      department,
+      semester,
+      skills,
+      bio,
+      profilePhoto,
+    } = request.body
 
-    const user = await User.findByIdAndUpdate(req.user.id, updates, { new: true, runValidators: true })
-    if (!user) {
-      return res.status(404).json({ success: false, message: 'User not found' })
+    const updates = {}
+    if (name !== undefined) updates.name = name.trim()
+    if (department !== undefined) updates.department = department
+    if (semester !== undefined) updates.semester = semester
+    if (skills !== undefined) updates.skills = skills
+    if (bio !== undefined) updates.bio = bio
+    if (profilePhoto !== undefined) updates.profilePhoto = profilePhoto
+
+    if (updates.name === '') {
+      return response.status(400).json({
+        success: false,
+        message: 'Name cannot be empty',
+      })
     }
-    
-    res.status(200).json({ success: true, user })
+
+    const user = await User.findByIdAndUpdate(
+      request.user.userId,
+      { $set: updates },
+      { new: true, runValidators: true, select: profileFields },
+    )
+
+    if (!user) {
+      return response.status(404).json({
+        success: false,
+        message: 'User not found',
+      })
+    }
+
+    return response.status(200).json({
+      success: true,
+      message: 'Profile updated successfully',
+      data: user,
+    })
   } catch (error) {
     console.error('Update profile error:', error)
-    res.status(500).json({ success: false, message: 'Server error' })
+
+    return response.status(500).json({
+      success: false,
+      message: 'Unable to update profile',
+    })
   }
 }
