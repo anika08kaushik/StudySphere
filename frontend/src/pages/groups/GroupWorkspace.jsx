@@ -41,7 +41,7 @@ export default function GroupWorkspace() {
       try {
         const res = await api.get(`/groups/${groupId}`)
         setGroup(res.data.data.group)
-        setMembers(res.data.data.members)
+        setMembers(res.data.data.members || [])
       } catch (error) {
         console.error('Failed to fetch group details', error)
       } finally {
@@ -108,7 +108,7 @@ export default function GroupWorkspace() {
       </div>
 
       <div className="pt-2">
-        <TabContent groupId={groupId} group={group} />
+        {tab === 'chat' ? <GroupChat groupId={groupId} members={members} /> : <TabContent groupId={groupId} group={group} />}
       </div>
     </div>
   )
