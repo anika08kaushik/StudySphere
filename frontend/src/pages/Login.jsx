@@ -20,7 +20,6 @@ export default function Login() {
     try {
       const res = await api.post('/auth/login', { email, password })
       const data = res.data.data
-
       login(data.user, data.token)
       navigate('/dashboard')
     } catch (err) {

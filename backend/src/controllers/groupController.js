@@ -44,6 +44,34 @@ export const createGroup = async (request, response) => {
   }
 }
 
+export const getAllGroups = async (request, response) => {
+  try {
+    const groups = await StudyGroup.find().populate('createdBy', userFields)
+    const memberships = await Membership.find({ status: 'active' })
+    
+    const groupsWithStats = groups.map(group => {
+      const groupMemberships = memberships.filter(m => String(m.groupId) === String(group._id))
+      const isJoined = groupMemberships.some(m => String(m.userId) === String(request.user.userId))
+      return {
+        ...group.toObject(),
+        memberCount: groupMemberships.length,
+        joined: isJoined
+      }
+    })
+
+    return response.status(200).json({
+      success: true,
+      data: groupsWithStats,
+    })
+  } catch (error) {
+    console.error('Get all groups error:', error)
+    return response.status(500).json({
+      success: false,
+      message: 'Unable to get groups',
+    })
+  }
+}
+
 export const getMyGroups = async (request, response) => {
   try {
     const memberships = await Membership.find({
@@ -201,6 +229,42 @@ export const joinGroup = async (request, response) => {
     return response.status(500).json({
       success: false,
       message: 'Unable to join group',
+    })
+  }
+}
+
+export const leaveGroup = async (request, response) => {
+  try {
+    const { groupId } = request.body
+
+    if (!groupId || !mongoose.isValidObjectId(groupId)) {
+      return response.status(400).json({
+        success: false,
+        message: 'A valid group ID is required',
+      })
+    }
+
+    const membership = await Membership.findOneAndDelete({
+      userId: request.user.userId,
+      groupId,
+    })
+
+    if (!membership) {
+      return response.status(404).json({
+        success: false,
+        message: 'You are not a member of this group',
+      })
+    }
+
+    return response.status(200).json({
+      success: true,
+      message: 'Left group successfully',
+    })
+  } catch (error) {
+    console.error('Leave group error:', error)
+    return response.status(500).json({
+      success: false,
+      message: 'Unable to leave group',
     })
   }
 }

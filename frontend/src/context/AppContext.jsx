@@ -4,7 +4,7 @@ const AppContext = createContext(null)
 
 const DEFAULT_AVATAR = {
   preset: 'maya',
-  name: 'Anika',
+  name: '',
   hairStyle: 'long',
   hairColor: '#493A63', // dark plum
   skinTone: '#F3C5A5', // warm peach
