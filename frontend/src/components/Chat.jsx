@@ -7,7 +7,7 @@ import socket, {
   leaveGroup,
   sendMessage,
 } from '../services/socket.js'
-import api from './services/api.js'
+import api from '../services/api.js'
 
 const Chat = () => {
   const { groupId } = useParams()

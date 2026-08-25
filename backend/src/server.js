@@ -7,6 +7,9 @@ import connectDatabase from './config/db.js'
 import socketAuthMiddleware from './middleware/socketAuthMiddleware.js'
 import registerChatSocket from './sockets/chatSocket.js'
 import messageRoutes from './routes/messageRoutes.js'
+import authRoutes from './routes/authRoutes.js'
+import userRoutes from './routes/userRoutes.js'
+import groupRoutes from './routes/groupRoutes.js'
 
 const app = express()
 const httpServer = http.createServer(app)
@@ -16,6 +19,9 @@ app.use(cors({ origin: process.env.CLIENT_URL || 'http://localhost:5173' }))
 app.use(express.json())
 
 app.use('/api', messageRoutes)
+app.use('/api/auth', authRoutes)
+app.use('/api/users', userRoutes)
+app.use('/api/groups', groupRoutes)
 
 app.get('/api/health', (_request, response) => {
   response.status(200).json({
