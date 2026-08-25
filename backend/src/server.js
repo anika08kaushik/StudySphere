@@ -4,7 +4,11 @@ import express from 'express'
 import cors from 'cors'
 import { Server } from 'socket.io'
 import connectDatabase from './config/db.js'
+
 import fileRoutes from './routes/fileRoutes.js'
+import authRoutes from './routes/authRoutes.js'
+import userRoutes from './routes/userRoutes.js'
+import groupRoutes from './routes/groupRoutes.js'
 
 const app = express()
 const httpServer = http.createServer(app)
@@ -13,7 +17,13 @@ const port = process.env.PORT || 5000
 app.use(cors({ origin: process.env.CLIENT_URL || 'http://localhost:5173' }))
 app.use(express.json())
 
+// Member 4 - Resource/File APIs
 app.use('/api/files', fileRoutes)
+
+// Member 1 - Authentication, Users & Groups APIs
+app.use('/api/auth', authRoutes)
+app.use('/api/users', userRoutes)
+app.use('/api/groups', groupRoutes)
 
 app.get('/api/health', (_request, response) => {
   response.status(200).json({
@@ -33,6 +43,7 @@ io.on('connection', (socket) => {
 
 const startServer = async () => {
   await connectDatabase()
+
   httpServer.listen(port, () => {
     console.log(`Server running on port ${port}`)
   })
