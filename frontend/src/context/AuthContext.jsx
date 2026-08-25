@@ -11,7 +11,7 @@ export function AuthProvider({ children }) {
     const token = localStorage.getItem('studysphere_token')
     if (token) {
       api.get('/users/profile')
-        .then((res) => setUser(res.data.user || res.data))
+        .then((res) => setUser(res.data.data || res.data.user || res.data))
         .catch(() => localStorage.removeItem('studysphere_token'))
         .finally(() => setLoading(false))
     } else {
