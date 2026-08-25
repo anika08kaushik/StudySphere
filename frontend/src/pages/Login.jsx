@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
+import api from '../services/api'
 import Input from '../components/ui/Input'
 import Button from '../components/ui/Button'
 
@@ -17,18 +18,12 @@ export default function Login() {
     setError('')
     setLoading(true)
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.message || 'Login failed')
-      login(data.data?.user || data.user, data.data?.token || data.token)
+      const res = await api.post('/auth/login', { email, password })
+      const data = res.data
+      login(data.user, data.token)
       navigate('/dashboard')
-    } catch {
-      login({ _id: 'u1', name: 'Anika Kaushik', email, department: 'Computer Science', semester: 6, skills: ['Java', 'React', 'ML', 'AI'], isOnline: true, status: 'online', focusStreak: 12, totalFocusMinutes: 2535 }, 'demo-token')
-      navigate('/dashboard')
+    } catch (err) {
+      setError(err.response?.data?.message || 'Login failed')
     } finally {
       setLoading(false)
     }

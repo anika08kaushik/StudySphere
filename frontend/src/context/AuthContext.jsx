@@ -10,8 +10,8 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     const token = localStorage.getItem('studysphere_token')
     if (token) {
-      api.get('/auth/me')
-        .then((res) => setUser(res.data.data || res.data.user || res.data))
+      api.get('/users/profile')
+        .then((res) => setUser(res.data.user || res.data))
         .catch(() => localStorage.removeItem('studysphere_token'))
         .finally(() => setLoading(false))
     } else {
