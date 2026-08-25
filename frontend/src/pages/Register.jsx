@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
+import api from '../services/api'
 import Input from '../components/ui/Input'
 import Button from '../components/ui/Button'
 
@@ -18,17 +19,10 @@ export default function Register() {
     setError('')
     setLoading(true)
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/auth/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.message || 'Registration failed')
+      await api.post('/auth/register', form)
       navigate('/login')
-    } catch {
-      login({ _id: 'u1', name: form.name, email: form.email, department: form.department, semester: Number(form.semester), skills: [], isOnline: true, status: 'online', focusStreak: 0, totalFocusMinutes: 0 }, 'demo-token')
-      navigate('/dashboard')
+    } catch (err) {
+      setError(err.response?.data?.message || 'Registration failed')
     } finally {
       setLoading(false)
     }

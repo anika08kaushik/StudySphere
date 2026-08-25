@@ -1,6 +1,6 @@
+import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { groups } from '../../mock/groups'
-import { users } from '../../mock/users'
+import api from '../../services/api'
 import AvatarGroup from '../../components/ui/AvatarGroup'
 import Overview from './tabs/Overview'
 import CollaborativeNotes from '../notes/CollaborativeNotes'
@@ -32,8 +32,27 @@ const tabComponents = {
 
 export default function GroupWorkspace() {
   const { groupId, tab = 'overview' } = useParams()
-  const group = groups.find((g) => g._id === groupId) || groups[0]
-  const groupMembers = users.filter((u) => group.members?.includes(u._id))
+  const [group, setGroup] = useState(null)
+  const [members, setMembers] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchGroup = async () => {
+      try {
+        const res = await api.get(`/groups/${groupId}`)
+        setGroup(res.data.group)
+        setMembers(res.data.members.map(m => m.userId))
+      } catch (error) {
+        console.error('Failed to fetch group details', error)
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchGroup()
+  }, [groupId])
+
+  if (loading) return <div className="text-center p-8 text-[#776B88]">Loading workspace...</div>
+  if (!group) return <div className="text-center p-8 text-red-500">Group not found</div>
 
   const TabContent = tabComponents[tab] || Overview
 
@@ -54,8 +73,8 @@ export default function GroupWorkspace() {
             <h1 className="text-2xl font-extrabold text-[#493A63] tracking-tight">{group.name}</h1>
             <p className="text-xs text-[#776B88] mt-1">{group.description}</p>
             <div className="flex items-center gap-3 mt-3">
-              <AvatarGroup users={groupMembers} max={4} size="sm" />
-              <span className="text-xs font-semibold text-[#776B88]">{group.memberCount || groupMembers.length} active members</span>
+              <AvatarGroup users={members} max={4} size="sm" />
+              <span className="text-xs font-semibold text-[#776B88]">{members.length} active members</span>
             </div>
           </div>
 

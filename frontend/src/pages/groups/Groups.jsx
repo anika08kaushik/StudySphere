@@ -1,64 +1,97 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { groups as initialGroups } from '../../mock/groups'
-import { users } from '../../mock/users'
+import api from '../../services/api'
 
 export default function Groups() {
-  const [groupList, setGroupList] = useState(initialGroups)
+  const [groupList, setGroupList] = useState([])
   const [search, setSearch] = useState('')
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchGroups = async () => {
+      try {
+        const res = await api.get('/groups')
+        setGroupList(res.data.groups)
+      } catch (error) {
+        console.error('Failed to fetch groups', error)
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchGroups()
+  }, [])
 
   // New Group Form State
   const [newGroupName, setNewGroupName] = useState('')
   const [newGroupDesc, setNewGroupDesc] = useState('')
   const [newGroupSubject, setNewGroupSubject] = useState('')
 
-  const handleCreateGroup = (e) => {
+  const handleCreateGroup = async (e) => {
     e.preventDefault()
     if (!newGroupName.trim()) return
 
-    const newGroup = {
-      _id: `group-${Date.now()}`,
-      name: newGroupName,
-      shortName: newGroupName.slice(0, 3).toUpperCase(),
-      description: newGroupDesc || 'A cozy new study group on campus.',
-      members: ['user-1'],
-      joined: true,
-      onlineCount: 1,
-      isStudying: false,
-      coverGradient: 'from-purple-500 to-indigo-500',
-      subjects: newGroupSubject ? [newGroupSubject] : ['General Study'],
-    }
+    try {
+      const res = await api.post('/groups', {
+        name: newGroupName,
+        description: newGroupDesc || 'A cozy new study group on campus.',
+        subjects: newGroupSubject ? [newGroupSubject] : ['General Study'],
+        coverImage: 'from-purple-500 to-indigo-500'
+      })
+      
+      const newGroup = {
+        ...res.data.group,
+        memberCount: 1,
+        joined: true,
+        shortName: newGroupName.slice(0, 3).toUpperCase(),
+        isStudying: false,
+      }
 
-    setGroupList([newGroup, ...groupList])
-    setNewGroupName('')
-    setNewGroupDesc('')
-    setNewGroupSubject('')
-    setShowCreateModal(false)
+      setGroupList([newGroup, ...groupList])
+      setNewGroupName('')
+      setNewGroupDesc('')
+      setNewGroupSubject('')
+      setShowCreateModal(false)
+    } catch (error) {
+      console.error('Failed to create group', error)
+      alert('Failed to create group')
+    }
   }
 
-  const toggleJoin = (groupId, e) => {
+  const toggleJoin = async (groupId, isJoined, e) => {
     e.preventDefault()
     e.stopPropagation()
-    setGroupList((prev) =>
-      prev.map((g) => {
-        if (g._id === groupId) {
-          const isJoined = g.joined
-          return {
-            ...g,
-            joined: !isJoined,
-            onlineCount: isJoined ? Math.max(0, g.onlineCount - 1) : g.onlineCount + 1,
+
+    try {
+      if (isJoined) {
+        await api.post(`/groups/${groupId}/leave`)
+      } else {
+        await api.post(`/groups/${groupId}/join`)
+      }
+
+      setGroupList((prev) =>
+        prev.map((g) => {
+          if (g._id === groupId) {
+            return {
+              ...g,
+              joined: !isJoined,
+              memberCount: isJoined ? Math.max(0, g.memberCount - 1) : g.memberCount + 1,
+            }
           }
-        }
-        return g
-      })
-    )
+          return g
+        })
+      )
+    } catch (error) {
+      console.error('Failed to toggle join status', error)
+    }
   }
 
   const filtered = groupList.filter((g) =>
     g.name.toLowerCase().includes(search.toLowerCase()) ||
     g.subjects?.some((s) => s.toLowerCase().includes(search.toLowerCase()))
   )
+
+  if (loading) return <div className="text-center p-8 text-[#776B88]">Loading study groups...</div>
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
@@ -99,14 +132,14 @@ export default function Groups() {
       {/* Groups Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         {filtered.map((group) => {
-          const groupMembers = users.filter((u) => group.members?.includes(u._id))
+          const shortName = group.name.slice(0, 3).toUpperCase()
           return (
             <Link key={group._id} to={`/groups/${group._id}`}>
               <div className="card-soft overflow-hidden hover:border-[#9B7EDB] transition-all flex flex-col h-full group bg-white">
                 {/* Banner */}
                 <div className="h-24 bg-gradient-to-br from-[#E9DFFF] via-[#F3ECFE] to-[#FDF5F1] relative p-4 flex items-center justify-between border-b border-[#E8E0F2]">
                   <div className="w-12 h-12 rounded-2xl bg-white text-[#493A63] font-extrabold text-base flex items-center justify-center shadow-xs border border-[#E8E0F2]">
-                    {group.shortName}
+                    {shortName}
                   </div>
                   {group.isStudying && (
                     <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
@@ -128,11 +161,11 @@ export default function Groups() {
                   <div className="pt-4 mt-4 border-t border-[#E8E0F2] flex items-center justify-between">
                     <div className="flex items-center gap-1.5 text-xs font-semibold text-[#776B88]">
                       <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                      <span>{group.onlineCount || groupMembers.length} online</span>
+                      <span>{group.memberCount} members</span>
                     </div>
 
                     <button
-                      onClick={(e) => toggleJoin(group._id, e)}
+                      onClick={(e) => toggleJoin(group._id, group.joined, e)}
                       className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
                         group.joined
                           ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'

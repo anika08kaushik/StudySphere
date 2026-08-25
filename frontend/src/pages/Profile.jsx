@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import { useApp } from '../context/AppContext'
+import api from '../services/api'
 import AvatarPicker from '../components/three/avatars/AvatarPicker'
 
 export default function Profile() {
@@ -9,6 +10,20 @@ export default function Profile() {
   const [showPickerModal, setShowPickerModal] = useState(false)
   const [department, setDepartment] = useState(user?.department || 'Computer Science')
   const [semester, setSemester] = useState(user?.semester || 6)
+  const [saving, setSaving] = useState(false)
+
+  const handleSave = async () => {
+    setSaving(true)
+    try {
+      await api.put('/users/profile', { department, semester })
+      alert('Profile updated successfully!')
+    } catch (error) {
+      console.error('Failed to update profile', error)
+      alert('Failed to update profile')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const studentName = avatarConfig?.name || user?.name || 'Anika Kaushik'
 
@@ -114,6 +129,16 @@ export default function Profile() {
               className="w-full px-3.5 py-2.5 rounded-xl border border-[#E8E0F2] bg-[#F8F5FF] text-[#493A63] font-semibold text-xs focus:outline-none focus:border-[#9B7EDB]"
             />
           </div>
+        </div>
+
+        <div className="mt-6 flex justify-end">
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="px-5 py-2.5 rounded-xl bg-[#9B7EDB] hover:bg-[#7A58C1] text-white font-bold text-xs shadow-xs transition-all disabled:opacity-50"
+          >
+            {saving ? 'Saving...' : 'Save Changes'}
+          </button>
         </div>
       </div>
 
