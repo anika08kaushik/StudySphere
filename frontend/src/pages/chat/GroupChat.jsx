@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from 'react'
 import Avatar from '../../components/ui/Avatar'
-import { messages as initialMessages } from '../../mock/messages'
-import { users } from '../../mock/users'
 import { useApp } from '../../context/AppContext'
+import { useAuth } from '../../hooks/useAuth'
+import chatService from '../../services/chatService'
+import socket, { connectSocket, disconnectSocket, joinGroup, leaveGroup, sendMessage } from '../../services/socket'
 
 const CHANNELS = [
   { id: 'general', name: '💬 Student Lounge', desc: 'General campus chat & discussions' },
@@ -11,52 +12,54 @@ const CHANNELS = [
   { id: 'music', name: '🎵 Chill & Lofi', desc: 'Share study playlists & lofi beats' },
 ]
 
-export default function GroupChat() {
+export default function GroupChat({ groupId, members = [] }) {
   const { avatarConfig } = useApp()
+  const { user } = useAuth()
   const [activeChannel, setActiveChannel] = useState('general')
-  const [msgList, setMsgList] = useState(initialMessages)
+  const [msgList, setMsgList] = useState([])
   const [input, setInput] = useState('')
-  const [isTyping, setIsTyping] = useState(false)
+  const [error, setError] = useState('')
   const bottomRef = useRef(null)
 
   useEffect(() => {
+    if (!groupId) return undefined
+
+    const loadMessages = async () => {
+      try {
+        const response = await chatService.getMessages(groupId)
+        setMsgList(response.data.data || [])
+      } catch (loadError) {
+        console.error('Failed to load messages:', loadError)
+        setError(loadError.response?.data?.message || 'Unable to load messages')
+      }
+    }
+
+    const handleNewMessage = (message) => {
+      setMsgList((current) => [...current, message])
+    }
+
+    loadMessages()
+    connectSocket()
+    joinGroup(groupId)
+    socket.on('message:new', handleNewMessage)
+
+    return () => {
+      socket.off('message:new', handleNewMessage)
+      leaveGroup(groupId)
+      disconnectSocket()
+    }
+  }, [groupId])
+
+  useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [msgList, isTyping])
+  }, [msgList])
 
   const handleSend = (e) => {
     e.preventDefault()
     if (!input.trim()) return
 
-    const userMsg = {
-      _id: `msg-${Date.now()}`,
-      sender: 'user-1',
-      senderName: avatarConfig?.name || 'Anika',
-      content: input.trim(),
-      createdAt: new Date().toISOString(),
-    }
-
-    setMsgList((prev) => [...prev, userMsg])
-    const textSent = input
+    sendMessage(groupId, input.trim())
     setInput('')
-
-    // Simulate peer response after 1.5s
-    setIsTyping(true)
-    setTimeout(() => {
-      setIsTyping(false)
-      const botReplies = [
-        `Great point about ${textSent.slice(0, 15)}! Are you joining the library session later?`,
-        'Sounds good! Let’s meet at Desk 02 in the 3D Library.',
-        'Thanks for sharing that! Added it to my study task board.',
-      ]
-      const replyMsg = {
-        _id: `msg-${Date.now() + 1}`,
-        sender: 'u2',
-        senderName: 'Maya',
-        content: botReplies[Math.floor(Math.random() * botReplies.length)],
-        createdAt: new Date().toISOString(),
-      }
-      setMsgList((prev) => [...prev, replyMsg])
-    }, 1800)
   }
 
   return (
@@ -73,7 +76,7 @@ export default function GroupChat() {
 
         <div className="flex items-center gap-2">
           <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-          <span className="text-xs font-bold text-[#493A63]">8 Students Online</span>
+          <span className="text-xs font-bold text-[#493A63]">{members.length} Students Online</span>
         </div>
       </div>
 
@@ -106,10 +109,10 @@ export default function GroupChat() {
               ACTIVE STUDENTS
             </p>
             <div className="space-y-2">
-              {users.slice(0, 4).map((u) => (
-                <div key={u._id} className="flex items-center gap-2">
-                  <Avatar name={u.name} size="sm" status={u.status} />
-                  <span className="text-xs font-semibold text-[#493A63] truncate">{u.name}</span>
+              {members.slice(0, 4).map((member) => (
+                <div key={member.id || member._id} className="flex items-center gap-2">
+                  <Avatar name={member.name} size="sm" status="online" src={member.profilePhoto} />
+                  <span className="text-xs font-semibold text-[#493A63] truncate">{member.name}</span>
                 </div>
               ))}
             </div>
@@ -132,14 +135,18 @@ export default function GroupChat() {
 
           {/* Messages Stream */}
           <div className="flex-1 p-4 overflow-y-auto space-y-4 bg-[#F8F5FF]/30">
-            {msgList.map((m) => {
-              const isMe = m.sender === 'user-1'
+            {error && <p className="text-sm text-red-500 bg-red-50 p-3 rounded-lg">{error}</p>}
+            {msgList.map((message) => {
+              const senderId = message.senderId?.id || message.senderId?._id || message.senderId
+              const currentUserId = user?.id || user?._id
+              const isMe = String(senderId) === String(currentUserId)
+              const senderName = message.senderId?.name || (isMe ? avatarConfig?.name : 'Student') || 'Student'
               return (
-                <div key={m._id} className={`flex items-start gap-3 ${isMe ? 'flex-row-reverse' : ''}`}>
-                  <Avatar name={m.senderName || 'Student'} size="sm" />
+                <div key={message._id} className={`flex items-start gap-3 ${isMe ? 'flex-row-reverse' : ''}`}>
+                  <Avatar name={senderName} size="sm" src={message.senderId?.profilePhoto} />
                   <div className={`max-w-xs md:max-w-md ${isMe ? 'text-right' : ''}`}>
                     <span className="text-[11px] font-bold text-[#776B88] px-1">
-                      {m.senderName || 'Student'}
+                      {senderName}
                     </span>
                     <div
                       className={`px-4 py-2.5 rounded-2xl text-xs font-semibold mt-1 ${
@@ -148,19 +155,12 @@ export default function GroupChat() {
                           : 'bg-white border border-[#E8E0F2] text-[#493A63] rounded-tl-none shadow-xs'
                       }`}
                     >
-                      {m.content}
+                      {message.content}
                     </div>
                   </div>
                 </div>
               )
             })}
-
-            {isTyping && (
-              <div className="flex items-center gap-2 text-xs font-semibold text-[#9B7EDB] italic">
-                <span className="w-2 h-2 rounded-full bg-[#9B7EDB] animate-bounce" />
-                <span>Maya is typing a response...</span>
-              </div>
-            )}
 
             <div ref={bottomRef} />
           </div>

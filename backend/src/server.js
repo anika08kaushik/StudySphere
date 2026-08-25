@@ -4,6 +4,9 @@ import express from 'express'
 import cors from 'cors'
 import { Server } from 'socket.io'
 import connectDatabase from './config/db.js'
+import socketAuthMiddleware from './middleware/socketAuthMiddleware.js'
+import registerChatSocket from './sockets/chatSocket.js'
+import messageRoutes from './routes/messageRoutes.js'
 import authRoutes from './routes/authRoutes.js'
 import userRoutes from './routes/userRoutes.js'
 import groupRoutes from './routes/groupRoutes.js'
@@ -15,6 +18,7 @@ const port = process.env.PORT || 5000
 app.use(cors({ origin: process.env.CLIENT_URL || 'http://localhost:5173' }))
 app.use(express.json())
 
+app.use('/api', messageRoutes)
 app.use('/api/auth', authRoutes)
 app.use('/api/users', userRoutes)
 app.use('/api/groups', groupRoutes)
@@ -30,9 +34,16 @@ const io = new Server(httpServer, {
   cors: { origin: process.env.CLIENT_URL || 'http://localhost:5173' },
 })
 
+io.use(socketAuthMiddleware)
+
 io.on('connection', (socket) => {
-  socket.on('group:join', (groupId) => socket.join(String(groupId)))
-  socket.on('group:leave', (groupId) => socket.leave(String(groupId)))
+  console.log(`Socket connected: ${socket.id}`)
+
+  registerChatSocket(io, socket)
+
+  socket.on('disconnect', () => {
+    console.log(`Socket disconnected: ${socket.id}`)
+  })
 })
 
 const startServer = async () => {

@@ -1,6 +1,8 @@
 import { lazy, Suspense } from 'react'
 import { Routes, Route } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext.jsx'
+import ChatIntegration from './components/Chat.jsx'
+import './App.css'
 import { AppProvider } from './context/AppContext.jsx'
 import ProtectedRoute from './components/layout/ProtectedRoute.jsx'
 import AppLayout from './components/layout/AppLayout.jsx'
@@ -41,6 +43,7 @@ function App() {
                 <Route path="/calendar" element={<Calendar />} />
                 <Route path="/resources" element={<Resources />} />
                 <Route path="/chat" element={<Chat />} />
+                <Route path="/chat/:groupId" element={<ChatIntegration />} />
                 <Route path="/notifications" element={<Notifications />} />
                 <Route path="/profile" element={<Profile />} />
               </Route>
