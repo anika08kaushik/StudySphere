@@ -4,6 +4,8 @@ import express from 'express'
 import cors from 'cors'
 import { Server } from 'socket.io'
 import connectDatabase from './config/db.js'
+
+import fileRoutes from './routes/fileRoutes.js'
 import socketAuthMiddleware from './middleware/socketAuthMiddleware.js'
 import registerChatSocket from './sockets/chatSocket.js'
 import messageRoutes from './routes/messageRoutes.js'
@@ -21,7 +23,13 @@ app.use(express.json())
 
 
 app.use('/api/tasks', taskRoutes)
+// Member 4 - Resource/File APIs
+app.use('/api/files', fileRoutes)
+
+// Member 2 - Chat/Messaging APIs
 app.use('/api', messageRoutes)
+
+// Member 1 - Authentication, Users & Groups APIs
 app.use('/api/auth', authRoutes)
 app.use('/api/users', userRoutes)
 app.use('/api/groups', groupRoutes)
@@ -51,6 +59,7 @@ io.on('connection', (socket) => {
 
 const startServer = async () => {
   await connectDatabase()
+
   httpServer.listen(port, () => {
     console.log(`Server running on port ${port}`)
   })
