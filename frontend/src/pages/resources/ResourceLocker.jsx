@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import fileService from '../../services/fileService'
+import groupService from '../../services/groupService'
 
 const FILE_ICONS = {
   pdf: { icon: '📄', bg: 'bg-rose-50', text: 'text-rose-600', border: 'border-rose-200' },
@@ -9,7 +10,11 @@ const FILE_ICONS = {
   default: { icon: '📁', bg: 'bg-[#F8F5FF]', text: 'text-[#493A63]', border: 'border-[#E8E0F2]' },
 }
 
+const getGroupId = (group) => String(group.id || group._id || '')
+
 export default function ResourceLocker({ groupId }) {
+  const [availableGroups, setAvailableGroups] = useState([])
+  const [selectedGroupId, setSelectedGroupId] = useState(groupId || '')
   const [fileList, setFileList] = useState([])
   const [folders, setFolders] = useState([])
   const [loading, setLoading] = useState(true)
@@ -20,20 +25,42 @@ export default function ResourceLocker({ groupId }) {
   const [previewFile, setPreviewFile] = useState(null)
   const [previewUrl, setPreviewUrl] = useState('')
   const [previewLoading, setPreviewLoading] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState('')
 
   // Upload Form State
   const [selectedFile, setSelectedFile] = useState(null)
+  const activeGroupId = groupId || selectedGroupId
 
   useEffect(() => {
-    if (!groupId) return
+    if (groupId) return
+
+    const loadGroups = async () => {
+      try {
+        const response = await groupService.getGroups()
+        const groups = (response.data.data || []).filter((group) => group.joined)
+        setAvailableGroups(groups)
+        setSelectedGroupId((currentGroupId) => currentGroupId || getGroupId(groups[0] || {}))
+        if (groups.length === 0) setLoading(false)
+      } catch (groupsError) {
+        setError(groupsError.response?.data?.message || 'Unable to load your study groups.')
+        setLoading(false)
+      }
+    }
+
+    loadGroups()
+  }, [groupId])
+
+  useEffect(() => {
+    if (!activeGroupId) return
 
     const loadResources = async () => {
       setLoading(true)
       setError('')
       try {
         const [filesResponse, foldersResponse] = await Promise.all([
-          fileService.getFiles(groupId),
-          fileService.getFolders(groupId),
+          fileService.getFiles(activeGroupId),
+          fileService.getFolders(activeGroupId),
         ])
         setFileList(filesResponse.data.data || [])
         setFolders(foldersResponse.data.data || [])
@@ -45,25 +72,38 @@ export default function ResourceLocker({ groupId }) {
     }
 
     loadResources()
-  }, [groupId])
+  }, [activeGroupId])
 
   const handleUploadFile = async (e) => {
     e.preventDefault()
-    if (!selectedFile || !groupId) return
+    if (!selectedFile) {
+      setUploadError('Please select a file before uploading.')
+      return
+    }
+    if (!activeGroupId) {
+      setUploadError('Select a study group before uploading.')
+      return
+    }
 
     const formData = new FormData()
     formData.append('file', selectedFile)
-    formData.append('groupId', groupId)
+    formData.append('groupId', activeGroupId)
     if (activeFolder) formData.append('folderId', activeFolder)
 
     try {
+      setUploading(true)
+      setUploadError('')
       setError('')
       const response = await fileService.uploadFile(formData)
       setFileList((prev) => [response.data.data, ...prev])
       setSelectedFile(null)
       setShowUploadModal(false)
     } catch (uploadError) {
-      setError(uploadError.response?.data?.message || 'Unable to upload resource.')
+      const message = uploadError.response?.data?.message || 'Unable to upload resource.'
+      setUploadError(message)
+      setError(message)
+    } finally {
+      setUploading(false)
     }
   }
 
@@ -111,6 +151,29 @@ export default function ResourceLocker({ groupId }) {
       <div className="card-soft p-6 bg-white border-[#E8E0F2] flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
+
+      {!groupId && availableGroups.length > 0 && (
+        <div className="flex items-center gap-3">
+          <label htmlFor="resource-group" className="text-xs font-bold text-[#776B88]">Study group</label>
+          <select
+            id="resource-group"
+            value={selectedGroupId}
+            onChange={(e) => { setSelectedGroupId(e.target.value); setActiveFolder(null) }}
+            className="px-3.5 py-2 rounded-xl border border-[#E8E0F2] bg-white text-[#493A63] font-semibold text-sm focus:outline-none focus:border-[#9B7EDB]"
+          >
+            {availableGroups.map((group) => {
+              const id = getGroupId(group)
+              return <option key={id} value={id}>{group.name}</option>
+            })}
+          </select>
+        </div>
+      )}
+
+      {!groupId && !loading && !error && availableGroups.length === 0 && (
+        <div className="card-soft p-8 text-center bg-white border-[#E8E0F2]">
+          <p className="text-sm font-semibold text-[#776B88]">Join or create a study group to use the resource library.</p>
+        </div>
+      )}
             <span className="text-xl">📁</span>
             <h1 className="text-xl font-bold text-[#493A63]">Campus Resource Library</h1>
           </div>
@@ -118,7 +181,8 @@ export default function ResourceLocker({ groupId }) {
         </div>
 
         <button
-          onClick={() => setShowUploadModal(true)}
+          onClick={() => { setUploadError(''); setShowUploadModal(true) }}
+          disabled={!activeGroupId}
           className="px-5 py-2.5 rounded-xl bg-[#9B7EDB] hover:bg-[#7A58C1] text-white font-bold text-sm shadow-xs transition-all flex items-center gap-2"
         >
           <span>📤</span>
@@ -231,7 +295,7 @@ export default function ResourceLocker({ groupId }) {
           <div className="card-soft p-6 bg-white border-[#E8E0F2] max-w-md w-full max-h-[calc(100vh-2rem)] overflow-y-auto shadow-xl">
             <div className="flex items-center justify-between pb-3 border-b border-[#E8E0F2]">
               <h2 className="text-base font-bold text-[#493A63]">Upload Campus Resource</h2>
-              <button onClick={() => { setSelectedFile(null); setShowUploadModal(false) }} className="text-[#776B88] font-bold">
+              <button onClick={() => { setUploadError(''); setSelectedFile(null); setShowUploadModal(false) }} className="text-[#776B88] font-bold">
                 ✕
               </button>
             </div>
@@ -244,25 +308,32 @@ export default function ResourceLocker({ groupId }) {
                 <input
                   required
                   type="file"
-                  onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                  onChange={(e) => { setUploadError(''); setSelectedFile(e.target.files?.[0] || null) }}
                   className="w-full px-3.5 py-2 rounded-xl border border-[#E8E0F2] bg-[#F8F5FF] text-[#493A63] font-semibold text-xs focus:outline-none focus:border-[#9B7EDB]"
                 />
               </div>
 
+              <p className="text-xs font-semibold text-[#776B88]">
+                Study group: <span className="text-[#493A63]">{availableGroups.find((group) => getGroupId(group) === activeGroupId)?.name || 'Current group'}</span>
+              </p>
+
+              {uploadError && <p role="alert" className="text-xs font-semibold text-rose-600">{uploadError}</p>}
+
               <div className="pt-2 flex items-center justify-end gap-2">
                 <button
                   type="button"
-                  onClick={() => { setSelectedFile(null); setShowUploadModal(false) }}
+                  onClick={() => { setUploadError(''); setSelectedFile(null); setShowUploadModal(false) }}
+                  disabled={uploading}
                   className="px-4 py-2 rounded-xl border border-[#E8E0F2] text-xs font-bold text-[#776B88]"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  disabled={!selectedFile}
+                  disabled={!selectedFile || !activeGroupId || uploading}
                   className="px-5 py-2 rounded-xl bg-[#9B7EDB] hover:bg-[#7A58C1] text-white font-bold text-xs shadow-xs"
                 >
-                  Upload
+                  {uploading ? 'Uploading...' : 'Upload'}
                 </button>
               </div>
             </form>
