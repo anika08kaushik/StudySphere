@@ -9,22 +9,56 @@ import {
   getGroupFolders,
   deleteFolder,
 } from "../controllers/fileController.js";
+
 import upload from "../middleware/uploadMiddleware.js";
 import authenticate from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
 // Files
-router.post("/upload", authenticate, upload.single("file"), uploadFile);
-router.get("/group/:groupId", getGroupFiles);
+router.post(
+  "/upload",
+  authenticate,
+  upload.single("file"),
+  uploadFile
+);
+
+router.get(
+  "/group/:groupId",
+  authenticate,
+  getGroupFiles
+);
 
 // Folders
-router.post("/folders", createFolder);
-router.get("/folders/group/:groupId", getGroupFolders);
-router.delete("/folders/:id", deleteFolder);
+router.post(
+  "/folders",
+  authenticate,
+  createFolder
+);
+
+router.get(
+  "/folders/group/:groupId",
+  authenticate,
+  getGroupFolders
+);
+
+router.delete(
+  "/folders/:id",
+  authenticate,
+  deleteFolder
+);
 
 // Generic file routes
-router.get("/:id", getFileById);
-router.delete("/:id", authenticate, deleteFile);
+router.get(
+  "/:id",
+  authenticate,
+  getFileById
+);
+
+router.delete(
+  "/:id",
+  authenticate,
+  deleteFile
+);
 
 export default router;

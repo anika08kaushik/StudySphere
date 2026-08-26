@@ -4,6 +4,8 @@ import storageService from "../services/storageService.js";
 import validateFile from "../services/fileValidationService.js";
 import generateStorageKey from "../services/storageKeyService.js";
 
+// ==================== FILE UPLOAD ====================
+
 export const uploadFile = async (req, res) => {
   try {
     const { groupId, folderId } = req.body || {};
@@ -22,12 +24,22 @@ export const uploadFile = async (req, res) => {
       });
     }
 
+    // Validate file type
     validateFile(req.file);
 
-    const storageKey = generateStorageKey(groupId, req.file.originalname);
+    // Generate unique S3 storage key
+    const storageKey = generateStorageKey(
+      groupId,
+      req.file.originalname
+    );
 
-    await storageService.uploadFile(req.file, storageKey);
+    // Upload actual file to S3
+    await storageService.uploadFile(
+      req.file,
+      storageKey
+    );
 
+    // Save file metadata in MongoDB
     const file = await File.create({
       name: req.file.originalname,
       originalName: req.file.originalname,
@@ -54,9 +66,19 @@ export const uploadFile = async (req, res) => {
   }
 };
 
+
+// ==================== GET GROUP FILES ====================
+
 export const getGroupFiles = async (req, res) => {
   try {
     const { groupId } = req.params;
+
+    if (!groupId) {
+      return res.status(400).json({
+        success: false,
+        message: "groupId is required",
+      });
+    }
 
     const files = await File.find({ groupId })
       .populate("uploadedBy", "name email")
@@ -78,6 +100,9 @@ export const getGroupFiles = async (req, res) => {
   }
 };
 
+
+// ==================== GET FILE / DOWNLOAD ====================
+
 export const getFileById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -93,20 +118,57 @@ export const getFileById = async (req, res) => {
       });
     }
 
-    return res.status(200).json({
-      success: true,
-      message: "File retrieved successfully",
-      data: file,
-    });
+    if (!file.storageKey) {
+      return res.status(404).json({
+        success: false,
+        message: "File storage location not found",
+      });
+    }
+
+    // Get actual file from S3
+    const s3Object = await storageService.getFile(
+      file.storageKey
+    );
+
+    if (!s3Object || !s3Object.Body) {
+      return res.status(404).json({
+        success: false,
+        message: "File could not be retrieved from storage",
+      });
+    }
+
+    // Set response headers
+    res.setHeader(
+      "Content-Type",
+      file.mimeType
+    );
+
+    res.setHeader(
+      "Content-Length",
+      file.size
+    );
+
+    res.setHeader(
+      "Content-Disposition",
+      `inline; filename="${encodeURIComponent(
+        file.originalName
+      )}"`
+    );
+
+    // Stream S3 file to client
+    s3Object.Body.pipe(res);
   } catch (error) {
     console.error("Get file error:", error);
 
     return res.status(500).json({
       success: false,
-      message: "Failed to retrieve file",
+      message: error.message || "Failed to retrieve file",
     });
   }
 };
+
+
+// ==================== DELETE FILE ====================
 
 export const deleteFile = async (req, res) => {
   try {
@@ -121,10 +183,14 @@ export const deleteFile = async (req, res) => {
       });
     }
 
+    // Delete actual file from S3 first
     if (file.storageKey) {
-      await storageService.deleteFile(file.storageKey);
+      await storageService.deleteFile(
+        file.storageKey
+      );
     }
 
+    // Delete metadata from MongoDB
     await File.findByIdAndDelete(id);
 
     return res.status(200).json({
@@ -136,14 +202,21 @@ export const deleteFile = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: "Failed to delete file",
+      message: error.message || "Failed to delete file",
     });
   }
 };
 
+
+// ==================== CREATE FOLDER ====================
+
 export const createFolder = async (req, res) => {
   try {
-    const { name, groupId, parentFolderId } = req.body;
+    const {
+      name,
+      groupId,
+      parentFolderId,
+    } = req.body;
 
     if (!name || !groupId) {
       return res.status(400).json({
@@ -156,7 +229,7 @@ export const createFolder = async (req, res) => {
       name,
       groupId,
       parentFolderId: parentFolderId || null,
-      createdBy: req.user?.id,
+      createdBy: req.user.userId || req.user.id,
     });
 
     return res.status(201).json({
@@ -169,14 +242,24 @@ export const createFolder = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: "Failed to create folder",
+      message: error.message || "Failed to create folder",
     });
   }
 };
 
+
+// ==================== GET GROUP FOLDERS ====================
+
 export const getGroupFolders = async (req, res) => {
   try {
     const { groupId } = req.params;
+
+    if (!groupId) {
+      return res.status(400).json({
+        success: false,
+        message: "groupId is required",
+      });
+    }
 
     const folders = await Folder.find({ groupId })
       .populate("createdBy", "name email")
@@ -197,6 +280,9 @@ export const getGroupFolders = async (req, res) => {
   }
 };
 
+
+// ==================== DELETE FOLDER ====================
+
 export const deleteFolder = async (req, res) => {
   try {
     const { id } = req.params;
@@ -210,7 +296,14 @@ export const deleteFolder = async (req, res) => {
       });
     }
 
+    // Delete folder metadata
     await Folder.findByIdAndDelete(id);
+
+    // Optional: detach files from this folder
+    await File.updateMany(
+      { folderId: id },
+      { $set: { folderId: null } }
+    );
 
     return res.status(200).json({
       success: true,
@@ -221,7 +314,7 @@ export const deleteFolder = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: "Failed to delete folder",
+      message: error.message || "Failed to delete folder",
     });
   }
 };
