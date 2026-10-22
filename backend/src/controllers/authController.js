@@ -20,9 +20,16 @@ export const registerUser = async (request, response) => {
       semester,
       skills,
       bio,
-    } = request.body
+    } = request.body || {}
 
-    if (!name || !email || !password) {
+    if (
+      typeof name !== 'string' ||
+      typeof email !== 'string' ||
+      typeof password !== 'string' ||
+      !name.trim() ||
+      !email.trim() ||
+      !password
+    ) {
       return response.status(400).json({
         success: false,
         message: 'Name, email and password are required',
@@ -92,9 +99,9 @@ export const registerUser = async (request, response) => {
 
 export const loginUser = async (request, response) => {
   try {
-    const { email, password } = request.body
+    const { email, password } = request.body || {}
 
-    if (!email || !password) {
+    if (typeof email !== 'string' || typeof password !== 'string' || !email.trim() || !password) {
       return response.status(400).json({
         success: false,
         message: 'Email and password are required',

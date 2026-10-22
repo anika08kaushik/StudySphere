@@ -58,6 +58,10 @@ io.on('connection', (socket) => {
 })
 
 const startServer = async () => {
+  if (!process.env.JWT_SECRET?.trim()) {
+    throw new Error('JWT_SECRET is not configured. Set it in backend/.env before starting the backend.')
+  }
+
   await connectDatabase()
 
   httpServer.listen(port, () => {
