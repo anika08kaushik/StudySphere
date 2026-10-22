@@ -1,6 +1,7 @@
 import mongoose from 'mongoose'
 import Message from '../models/Message.js'
 import Membership from '../models/Membership.js'
+import { createNotification } from '../services/notificationService.js'
 
 // In-memory room presence tracker for active students
 const groupPresence = new Map()
@@ -93,8 +94,8 @@ const registerChatSocket = (io, socket) => {
     }
   })
 
-  // 3. Send Message (with Reply and Fallback support)
-  socket.on('message:send', async ({ groupId, content, replyTo }) => {
+  // 3. Send Message (with Reply, Mentions, Attachments, and Fallback support)
+  socket.on('message:send', async ({ groupId, content, replyTo, mentions = [], attachments = [] }) => {
     try {
       const stringGroupId = String(groupId)
       const userId = socket.user?.userId || socket.id
@@ -137,12 +138,29 @@ const registerChatSocket = (io, socket) => {
         }
       }
 
+      // Mention notifications
+      if (Array.isArray(mentions)) {
+        for (const mentionId of mentions) {
+          createNotification({
+            recipient: mentionId,
+            sender: userId,
+            groupId: stringGroupId,
+            type: 'mention',
+            title: 'New Chat Mention',
+            message: `${sender.name} mentioned you in chat: "${content.slice(0, 50)}..."`,
+            io,
+          })
+        }
+      }
+
       if (isDbConnected && socket.user?.userId) {
         const message = await Message.create({
           groupId: stringGroupId,
           senderId: userId,
           content: content.trim(),
           replyTo: replyTo || null,
+          mentions,
+          attachments,
         })
 
         const populatedMessage = await message.populate('senderId', 'name profilePhoto')
@@ -155,7 +173,11 @@ const registerChatSocket = (io, socket) => {
           senderId: sender,
           content: content.trim(),
           replyTo: replyTo || null,
+          mentions,
+          attachments,
           reactions: [],
+          pinned: false,
+          isEdited: false,
           createdAt: new Date().toISOString(),
         }
         io.to(stringGroupId).emit('message:new', mockMessage)
@@ -201,7 +223,38 @@ const registerChatSocket = (io, socket) => {
     })
   })
 
-  // 6. Disconnect Cleanup
+  // 6. Live Message Edit
+  socket.on('message:edit', ({ groupId, messageId, content }) => {
+    const stringGroupId = String(groupId)
+    io.to(stringGroupId).emit('message:edited', {
+      groupId: stringGroupId,
+      messageId,
+      content,
+      isEdited: true,
+      editedAt: new Date().toISOString(),
+    })
+  })
+
+  // 7. Live Message Delete
+  socket.on('message:delete', ({ groupId, messageId }) => {
+    const stringGroupId = String(groupId)
+    io.to(stringGroupId).emit('message:deleted', {
+      groupId: stringGroupId,
+      messageId,
+    })
+  })
+
+  // 8. Live Pin/Unpin
+  socket.on('message:pin', ({ groupId, messageId, pinned }) => {
+    const stringGroupId = String(groupId)
+    io.to(stringGroupId).emit('message:pinned', {
+      groupId: stringGroupId,
+      messageId,
+      pinned,
+    })
+  })
+
+  // 9. Disconnect Cleanup
   socket.on('disconnect', () => {
     groupPresence.forEach((roomUsers, groupId) => {
       if (roomUsers.has(socket.id)) {

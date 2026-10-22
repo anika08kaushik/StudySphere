@@ -8,14 +8,18 @@ import connectDatabase from './config/db.js'
 import fileRoutes from './routes/fileRoutes.js'
 import socketAuthMiddleware from './middleware/socketAuthMiddleware.js'
 import registerChatSocket from './sockets/chatSocket.js'
+import registerNotesSocket from './sockets/notesSocket.js'
 import messageRoutes from './routes/messageRoutes.js'
+import noteRoutes from './routes/noteRoutes.js'
+import notificationRoutes from './routes/notificationRoutes.js'
+import activityRoutes from './routes/activityRoutes.js'
 import authRoutes from './routes/authRoutes.js'
 import userRoutes from './routes/userRoutes.js'
 import groupRoutes from './routes/groupRoutes.js'
 import taskRoutes from './routes/taskRoutes.js'
 
-import notificationRoutes from './routes/notificationRoutes.js'
-import activityRoutes from './routes/activityRoutes.js'
+import { setNotificationIo } from './services/notificationService.js'
+import { setActivityIo } from './services/activityService.js'
 
 const app = express()
 const httpServer = http.createServer(app)
@@ -24,13 +28,13 @@ const port = process.env.PORT || 5000
 app.use(cors({ origin: process.env.CLIENT_URL || 'http://localhost:5173' }))
 app.use(express.json())
 
-
 app.use('/api/tasks', taskRoutes)
 // Member 4 - Resource/File APIs
 app.use('/api/files', fileRoutes)
 
-// Member 2 - Collaboration, Chat, Notifications & Activity APIs
+// Member 2 - Collaboration, Chat, Collaborative Notes, Notifications & Activity APIs
 app.use('/api', messageRoutes)
+app.use('/api', noteRoutes)
 app.use('/api/notifications', notificationRoutes)
 app.use('/api/activities', activityRoutes)
 
@@ -52,10 +56,21 @@ const io = new Server(httpServer, {
 
 io.use(socketAuthMiddleware)
 
+// Initialize notification & activity real-time socket emitters
+setNotificationIo(io)
+setActivityIo(io)
+
 io.on('connection', (socket) => {
   console.log(`Socket connected: ${socket.id}`)
 
+  // Personal user notification room
+  if (socket.user?.userId) {
+    socket.join(`user:${socket.user.userId}`)
+  }
+
+  // Register real-time communication modules
   registerChatSocket(io, socket)
+  registerNotesSocket(io, socket)
 
   socket.on('disconnect', () => {
     console.log(`Socket disconnected: ${socket.id}`)

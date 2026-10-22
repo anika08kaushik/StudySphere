@@ -33,6 +33,7 @@ export const disconnectSocket = () => {
   }
 }
 
+// Group Chat Sockets
 export const joinGroup = (groupId) => {
   socket.emit('group:join', String(groupId))
 }
@@ -41,11 +42,13 @@ export const leaveGroup = (groupId) => {
   socket.emit('group:leave', String(groupId))
 }
 
-export const sendMessage = (groupId, content, replyTo = null) => {
+export const sendMessage = (groupId, content, replyTo = null, mentions = [], attachments = []) => {
   socket.emit('message:send', {
     groupId: String(groupId),
     content,
     replyTo,
+    mentions,
+    attachments,
   })
 }
 
@@ -60,6 +63,48 @@ export const reactToMessage = (groupId, messageId, emoji) => {
     groupId: String(groupId),
     messageId,
     emoji,
+  })
+}
+
+// Collaborative Notes Real-Time Sockets
+export const joinNote = (noteId) => {
+  socket.emit('note:join', { noteId: String(noteId) })
+}
+
+export const leaveNote = (noteId) => {
+  socket.emit('note:leave', { noteId: String(noteId) })
+}
+
+export const sendNoteChange = (noteId, content, update = null, cursor = null) => {
+  socket.emit('note:change', {
+    noteId: String(noteId),
+    content,
+    update,
+    cursor,
+  })
+}
+
+export const sendNoteCursor = (noteId, cursor, selection = null) => {
+  socket.emit('note:cursor', {
+    noteId: String(noteId),
+    cursor,
+    selection,
+  })
+}
+
+export const sendNoteComment = (noteId, comment) => {
+  socket.emit('note:comment_new', {
+    noteId: String(noteId),
+    comment,
+  })
+}
+
+export const sendNoteVersion = (noteId, action, version, content) => {
+  socket.emit('note:version_update', {
+    noteId: String(noteId),
+    action,
+    version,
+    content,
   })
 }
 

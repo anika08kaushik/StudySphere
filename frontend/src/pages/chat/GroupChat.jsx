@@ -30,31 +30,49 @@ export default function GroupChat({ groupId = 'g1', members = [] }) {
   const [msgList, setMsgList] = useState([])
   const [input, setInput] = useState('')
   const [replyingTo, setReplyingTo] = useState(null)
+  const [editingMessageId, setEditingMessageId] = useState(null)
+  const [editInput, setEditInput] = useState('')
   const [typingUsers, setTypingUsers] = useState([])
   const [onlineMembers, setOnlineMembers] = useState(members)
   const [searchQuery, setSearchQuery] = useState('')
   const [activeReactionPicker, setActiveReactionPicker] = useState(null)
   const [pinnedMessage, setPinnedMessage] = useState(null)
 
+  // Mentions State
+  const [showMentionSuggestions, setShowMentionSuggestions] = useState(false)
+  const [mentionQuery, setMentionQuery] = useState('')
+  const [selectedMentions, setSelectedMentions] = useState([])
+
+  // Attachments State
+  const [attachments, setAttachments] = useState([])
+  const fileInputRef = useRef(null)
   const bottomRef = useRef(null)
   const typingTimeoutRef = useRef(null)
 
-  // Current user identifiers
   const currentUserId = user?.id || user?._id || 'u1'
   const currentUserName = user?.name || avatarConfig?.name || 'You'
+
+  // Default known members for mention autocompletion
+  const availableMembers = members.length > 0 ? members : [
+    { id: 'u1', name: 'You', profilePhoto: null },
+    { id: 'u2', name: 'Rahul', profilePhoto: null },
+    { id: 'u3', name: 'Anika', profilePhoto: null },
+    { id: 'u4', name: 'Karan', profilePhoto: null },
+    { id: 'u5', name: 'Aryan', profilePhoto: null },
+  ]
 
   useEffect(() => {
     if (!groupId) return undefined
 
-    // 1. Load initial messages from backend or mock fallback
     const loadMessages = async () => {
       try {
         const response = await chatService.getMessages(groupId)
         const data = response.data?.data || []
         if (data.length > 0) {
           setMsgList(data)
+          const pinned = data.find((m) => m.pinned)
+          if (pinned) setPinnedMessage(pinned.content)
         } else {
-          // Fallback to rich mock messages
           const formattedMocks = initialMockMessages.map((m) => ({
             _id: m._id,
             groupId,
@@ -65,9 +83,11 @@ export default function GroupChat({ groupId = 'g1', members = [] }) {
             },
             content: m.content,
             reactions: [],
+            pinned: m._id === 'm1',
             createdAt: m.createdAt,
           }))
           setMsgList(formattedMocks)
+          setPinnedMessage(formattedMocks[0]?.content)
         }
       } catch (loadError) {
         console.warn('API message load fallback to mock data:', loadError.message)
@@ -81,19 +101,43 @@ export default function GroupChat({ groupId = 'g1', members = [] }) {
           },
           content: m.content,
           reactions: [],
+          pinned: m._id === 'm1',
           createdAt: m.createdAt,
         }))
         setMsgList(formattedMocks)
+        setPinnedMessage(formattedMocks[0]?.content)
       }
     }
 
-    // 2. Socket Listeners
+    // Socket Handlers
     const handleNewMessage = (newMsg) => {
       setMsgList((current) => {
-        // Prevent duplicate append
         if (current.some((m) => m._id === newMsg._id)) return current
         return [...current, newMsg]
       })
+    }
+
+    const handleMessageEdited = ({ messageId, content, isEdited, editedAt }) => {
+      setMsgList((current) =>
+        current.map((m) => (m._id === messageId ? { ...m, content, isEdited, editedAt } : m))
+      )
+    }
+
+    const handleMessageDeleted = ({ messageId }) => {
+      setMsgList((current) => current.filter((m) => m._id !== messageId))
+    }
+
+    const handleMessagePinned = ({ messageId, pinned }) => {
+      setMsgList((current) =>
+        current.map((m) => {
+          if (m._id === messageId) {
+            if (pinned) setPinnedMessage(m.content)
+            else setPinnedMessage(null)
+            return { ...m, pinned }
+          }
+          return m
+        })
+      )
     }
 
     const handleTypingUpdate = (data) => {
@@ -109,7 +153,7 @@ export default function GroupChat({ groupId = 'g1', members = [] }) {
       })
     }
 
-    const handleReactionUpdate = ({ messageId, emoji, userName, userId }) => {
+    const handleReactionUpdate = ({ messageId, emoji, userName }) => {
       setMsgList((current) =>
         current.map((msg) => {
           if (msg._id !== messageId) return msg
@@ -139,12 +183,18 @@ export default function GroupChat({ groupId = 'g1', members = [] }) {
     joinGroup(groupId)
 
     socket.on('message:new', handleNewMessage)
+    socket.on('message:edited', handleMessageEdited)
+    socket.on('message:deleted', handleMessageDeleted)
+    socket.on('message:pinned', handleMessagePinned)
     socket.on('typing:update', handleTypingUpdate)
     socket.on('message:reaction_update', handleReactionUpdate)
     socket.on('presence:update', handlePresenceUpdate)
 
     return () => {
       socket.off('message:new', handleNewMessage)
+      socket.off('message:edited', handleMessageEdited)
+      socket.off('message:deleted', handleMessageDeleted)
+      socket.off('message:pinned', handleMessagePinned)
       socket.off('typing:update', handleTypingUpdate)
       socket.off('message:reaction_update', handleReactionUpdate)
       socket.off('presence:update', handlePresenceUpdate)
@@ -157,9 +207,18 @@ export default function GroupChat({ groupId = 'g1', members = [] }) {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [msgList, typingUsers])
 
-  // Handle typing debounce
   const handleInputChange = (e) => {
-    setInput(e.target.value)
+    const val = e.target.value
+    setInput(val)
+
+    // Check for @ mention trigger
+    const lastWord = val.split(' ').pop()
+    if (lastWord.startsWith('@')) {
+      setShowMentionSuggestions(true)
+      setMentionQuery(lastWord.slice(1).toLowerCase())
+    } else {
+      setShowMentionSuggestions(false)
+    }
 
     if (!typingTimeoutRef.current) {
       emitTyping(groupId, true)
@@ -173,9 +232,30 @@ export default function GroupChat({ groupId = 'g1', members = [] }) {
     }, 1500)
   }
 
+  const handleSelectMention = (member) => {
+    const words = input.split(' ')
+    words.pop()
+    words.push(`@${member.name} `)
+    setInput(words.join(' '))
+    setSelectedMentions((prev) => [...prev, member.id || member._id])
+    setShowMentionSuggestions(false)
+  }
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const newAttachment = {
+      name: file.name,
+      url: URL.createObjectURL(file),
+      fileType: file.type.includes('pdf') ? 'pdf' : file.type.includes('image') ? 'image' : 'file',
+      size: Math.round(file.size / 1024),
+    }
+    setAttachments((prev) => [...prev, newAttachment])
+  }
+
   const handleSend = (e) => {
     e.preventDefault()
-    if (!input.trim()) return
+    if (!input.trim() && attachments.length === 0) return
 
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current)
@@ -191,9 +271,8 @@ export default function GroupChat({ groupId = 'g1', members = [] }) {
         }
       : null
 
-    sendMessage(groupId, input.trim(), payloadReply)
+    sendMessage(groupId, input.trim(), payloadReply, selectedMentions, attachments)
 
-    // Optimistic UI append for instant response in local test mode
     const optimisticMsg = {
       _id: `temp-${Date.now()}`,
       groupId,
@@ -205,18 +284,22 @@ export default function GroupChat({ groupId = 'g1', members = [] }) {
       },
       content: input.trim(),
       replyTo: payloadReply,
+      attachments: [...attachments],
       reactions: [],
+      pinned: false,
+      isEdited: false,
       createdAt: new Date().toISOString(),
     }
 
     setMsgList((prev) => [...prev, optimisticMsg])
     setInput('')
     setReplyingTo(null)
+    setSelectedMentions([])
+    setAttachments([])
   }
 
   const handleReactionClick = (messageId, emoji) => {
     reactToMessage(groupId, messageId, emoji)
-    // Optimistic local update
     setMsgList((current) =>
       current.map((msg) => {
         if (msg._id !== messageId) return msg
@@ -236,28 +319,59 @@ export default function GroupChat({ groupId = 'g1', members = [] }) {
     setActiveReactionPicker(null)
   }
 
+  const handleSaveEdit = (messageId) => {
+    if (!editInput.trim()) return
+    socket.emit('message:edit', { groupId, messageId, content: editInput.trim() })
+    setMsgList((prev) =>
+      prev.map((m) =>
+        m._id === messageId
+          ? { ...m, content: editInput.trim(), isEdited: true, editedAt: new Date().toISOString() }
+          : m
+      )
+    )
+    setEditingMessageId(null)
+    setEditInput('')
+  }
+
+  const handleDeleteMessage = (messageId) => {
+    socket.emit('message:delete', { groupId, messageId })
+    setMsgList((prev) => prev.filter((m) => m._id !== messageId))
+  }
+
+  const handleTogglePin = (message) => {
+    const nextPinState = !message.pinned
+    socket.emit('message:pin', { groupId, messageId: message._id, pinned: nextPinState })
+    setMsgList((prev) =>
+      prev.map((m) => (m._id === message._id ? { ...m, pinned: nextPinState } : m))
+    )
+    setPinnedMessage(nextPinState ? message.content : null)
+  }
+
   // Filter messages by search
   const filteredMessages = msgList.filter((m) => {
     if (!searchQuery.trim()) return true
     const q = searchQuery.toLowerCase()
     const contentMatch = m.content?.toLowerCase().includes(q)
     const authorMatch = m.senderId?.name?.toLowerCase().includes(q)
-    return contentMatch || authorMatch
+    const attachmentMatch = m.attachments?.some((a) => a.name.toLowerCase().includes(q))
+    return contentMatch || authorMatch || attachmentMatch
   })
 
   return (
     <div className="space-y-5 max-w-6xl mx-auto">
-      {/* Header Bar */}
+      {/* Top Header Card */}
       <div className="card-soft p-5 bg-white border-[#E8E0F2] flex flex-wrap items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2.5">
             <span className="text-2xl">💬</span>
             <h1 className="text-xl font-bold text-[#493A63]">Study Collaboration Hub</h1>
             <span className="text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full bg-[#E9DFFF] text-[#493A63] border border-[#C9B8E8]">
-              Live
+              Live Socket.IO
             </span>
           </div>
-          <p className="text-xs text-[#776B88] mt-1">Real-time study group communication & peer collaboration</p>
+          <p className="text-xs text-[#776B88] mt-1">
+            Real-time chat, file sharing, mentions, reactions & active peer presence
+          </p>
         </div>
 
         <div className="flex items-center gap-4">
@@ -267,8 +381,8 @@ export default function GroupChat({ groupId = 'g1', members = [] }) {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search chat..."
-              className="pl-8 pr-3 py-1.5 rounded-xl border border-[#E8E0F2] bg-[#F8F5FF] text-xs font-medium text-[#493A63] focus:outline-none focus:border-[#9B7EDB] w-36 sm:w-48 transition-all"
+              placeholder="Search chat or files..."
+              className="pl-8 pr-3 py-1.5 rounded-xl border border-[#E8E0F2] bg-[#F8F5FF] text-xs font-medium text-[#493A63] focus:outline-none focus:border-[#9B7EDB] w-40 sm:w-52 transition-all"
             />
             <span className="absolute left-2.5 top-2 text-xs text-[#776B88]">🔍</span>
             {searchQuery && (
@@ -290,8 +404,8 @@ export default function GroupChat({ groupId = 'g1', members = [] }) {
         </div>
       </div>
 
-      {/* Main Chat Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-5 h-[620px]">
+      {/* Main Chat Layout */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-5 h-[640px]">
         {/* Left Sidebar: Channels & Peer Presence */}
         <div className="card-soft p-4 bg-white border-[#E8E0F2] flex flex-col justify-between hidden md:flex">
           <div className="space-y-1">
@@ -324,13 +438,16 @@ export default function GroupChat({ groupId = 'g1', members = [] }) {
                 Live
               </span>
             </div>
-            <div className="space-y-2 max-h-36 overflow-y-auto">
-              {(onlineMembers.length > 0 ? onlineMembers : members.slice(0, 5)).map((member, idx) => (
-                <div key={member.id || member._id || idx} className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-[#F8F5FF] transition-colors">
+            <div className="space-y-2 max-h-40 overflow-y-auto">
+              {(onlineMembers.length > 0 ? onlineMembers : availableMembers).map((member, idx) => (
+                <div
+                  key={member.id || member._id || idx}
+                  className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-[#F8F5FF] transition-colors"
+                >
                   <Avatar name={member.name || 'Student'} size="sm" status="online" src={member.profilePhoto} />
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-semibold text-[#493A63] truncate">{member.name || 'Student'}</p>
-                    <p className="text-[10px] text-emerald-600 font-medium">Studying</p>
+                    <p className="text-[10px] text-emerald-600 font-medium">In Lounge</p>
                   </div>
                 </div>
               ))}
@@ -338,9 +455,9 @@ export default function GroupChat({ groupId = 'g1', members = [] }) {
           </div>
         </div>
 
-        {/* Right Area: Messages, Actions & Input */}
+        {/* Right Area: Messages Stream & Input Box */}
         <div className="md:col-span-3 card-soft bg-white border-[#E8E0F2] flex flex-col h-full overflow-hidden">
-          {/* Channel Banner */}
+          {/* Channel Banner & Pinned Notice */}
           <div className="p-3.5 border-b border-[#E8E0F2] bg-[#F8F5FF] flex items-center justify-between">
             <div>
               <h3 className="text-xs font-bold text-[#493A63]">
@@ -351,7 +468,7 @@ export default function GroupChat({ groupId = 'g1', members = [] }) {
               </p>
             </div>
             {pinnedMessage && (
-              <div className="hidden sm:flex items-center gap-2 px-3 py-1 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-800">
+              <div className="flex items-center gap-2 px-3 py-1 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-800 animate-fadeIn">
                 <span>📌</span>
                 <span className="font-semibold truncate max-w-xs">{pinnedMessage}</span>
                 <button onClick={() => setPinnedMessage(null)} className="text-amber-600 hover:text-amber-900 ml-1">✕</button>
@@ -367,9 +484,7 @@ export default function GroupChat({ groupId = 'g1', members = [] }) {
                 <p className="text-xs font-bold text-[#493A63] mt-2">
                   {searchQuery ? 'No matching messages found' : 'No messages yet in this lounge'}
                 </p>
-                <p className="text-[11px] text-[#776B88] mt-1">
-                  Start the discussion with your study group!
-                </p>
+                <p className="text-[11px] text-[#776B88] mt-1">Start collaborating with your study group!</p>
               </div>
             )}
 
@@ -378,6 +493,7 @@ export default function GroupChat({ groupId = 'g1', members = [] }) {
               const isMe = String(senderId) === String(currentUserId)
               const senderName = message.senderId?.name || (isMe ? currentUserName : 'Student')
               const isPickerOpen = activeReactionPicker === message._id
+              const isEditing = editingMessageId === message._id
 
               return (
                 <div
@@ -395,28 +511,78 @@ export default function GroupChat({ groupId = 'g1', members = [] }) {
                           ? new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
                           : 'Just now'}
                       </span>
+                      {message.isEdited && (
+                        <span className="text-[9px] text-[#776B88] italic">(edited)</span>
+                      )}
+                      {message.pinned && <span className="text-[10px]">📌</span>}
                     </div>
 
                     {/* Replied Context Bubble */}
                     {message.replyTo && (
-                      <div className={`text-[10px] p-2 rounded-xl mb-1 border italic text-[#776B88] ${
-                        isMe ? 'bg-[#9B7EDB]/20 border-[#9B7EDB]/30 text-left' : 'bg-white border-[#E8E0F2]'
-                      }`}>
+                      <div
+                        className={`text-[10px] p-2 rounded-xl mb-1 border italic text-[#776B88] ${
+                          isMe ? 'bg-[#9B7EDB]/20 border-[#9B7EDB]/30 text-left' : 'bg-white border-[#E8E0F2]'
+                        }`}
+                      >
                         <span className="font-bold text-[#493A63]">Replying to {message.replyTo.senderName}:</span>{' '}
                         <span>"{message.replyTo.content}"</span>
                       </div>
                     )}
 
-                    {/* Message Bubble */}
-                    <div
-                      className={`px-4 py-2.5 rounded-2xl text-xs font-medium leading-relaxed relative ${
-                        isMe
-                          ? 'bg-[#9B7EDB] text-white rounded-tr-none shadow-xs'
-                          : 'bg-white border border-[#E8E0F2] text-[#493A63] rounded-tl-none shadow-xs'
-                      }`}
-                    >
-                      {message.content}
-                    </div>
+                    {/* Message Bubble or Edit Input */}
+                    {isEditing ? (
+                      <div className="space-y-2 bg-white p-2.5 rounded-2xl border border-[#9B7EDB]">
+                        <input
+                          type="text"
+                          value={editInput}
+                          onChange={(e) => setEditInput(e.target.value)}
+                          className="w-full text-xs text-[#493A63] p-1.5 rounded-lg border border-[#E8E0F2] focus:outline-none"
+                        />
+                        <div className="flex items-center justify-end gap-2 text-[10px]">
+                          <button
+                            onClick={() => setEditingMessageId(null)}
+                            className="px-2 py-1 text-[#776B88] hover:text-[#493A63]"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={() => handleSaveEdit(message._id)}
+                            className="px-3 py-1 bg-[#9B7EDB] text-white rounded-lg font-bold"
+                          >
+                            Save
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div
+                        className={`px-4 py-2.5 rounded-2xl text-xs font-medium leading-relaxed relative ${
+                          isMe
+                            ? 'bg-[#9B7EDB] text-white rounded-tr-none shadow-xs'
+                            : 'bg-white border border-[#E8E0F2] text-[#493A63] rounded-tl-none shadow-xs'
+                        }`}
+                      >
+                        {/* Highlights @mentions */}
+                        {message.content}
+
+                        {/* File Attachments */}
+                        {message.attachments && message.attachments.length > 0 && (
+                          <div className="mt-2 space-y-1.5 pt-2 border-t border-white/20">
+                            {message.attachments.map((att, i) => (
+                              <div
+                                key={i}
+                                className={`flex items-center gap-2 p-2 rounded-xl text-xs ${
+                                  isMe ? 'bg-white/20 text-white' : 'bg-[#F8F5FF] text-[#493A63]'
+                                }`}
+                              >
+                                <span>{att.fileType === 'pdf' ? '📄' : att.fileType === 'image' ? '🖼️' : '📎'}</span>
+                                <span className="font-bold truncate flex-1">{att.name}</span>
+                                <span className="text-[10px] opacity-75">{att.size}KB</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     {/* Reactions Display */}
                     {message.reactions && message.reactions.length > 0 && (
@@ -435,10 +601,12 @@ export default function GroupChat({ groupId = 'g1', members = [] }) {
                       </div>
                     )}
 
-                    {/* Action Bar (Reply, React, Pin on Hover) */}
-                    <div className={`opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1.5 mt-1 text-[11px] ${
-                      isMe ? 'justify-end' : ''
-                    }`}>
+                    {/* Action Bar (Reply, React, Edit, Delete, Pin on Hover) */}
+                    <div
+                      className={`opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1.5 mt-1 text-[11px] ${
+                        isMe ? 'justify-end' : ''
+                      }`}
+                    >
                       <button
                         onClick={() =>
                           setReplyingTo({
@@ -460,14 +628,36 @@ export default function GroupChat({ groupId = 'g1', members = [] }) {
                       </button>
 
                       <button
-                        onClick={() => setPinnedMessage(message.content)}
-                        className="text-[#776B88] hover:text-amber-600 font-bold px-1"
+                        onClick={() => handleTogglePin(message)}
+                        className={`font-bold px-1 ${
+                          message.pinned ? 'text-amber-600' : 'text-[#776B88] hover:text-amber-600'
+                        }`}
                       >
-                        📌 Pin
+                        {message.pinned ? 'Unpin' : '📌 Pin'}
                       </button>
+
+                      {isMe && (
+                        <>
+                          <button
+                            onClick={() => {
+                              setEditingMessageId(message._id)
+                              setEditInput(message.content)
+                            }}
+                            className="text-[#776B88] hover:text-[#9B7EDB] font-bold px-1"
+                          >
+                            ✏ Edit
+                          </button>
+                          <button
+                            onClick={() => handleDeleteMessage(message._id)}
+                            className="text-red-400 hover:text-red-600 font-bold px-1"
+                          >
+                            🗑
+                          </button>
+                        </>
+                      )}
                     </div>
 
-                    {/* Quick Reaction Picker Dropdown */}
+                    {/* Emoji Picker Dropdown */}
                     {isPickerOpen && (
                       <div className="absolute z-10 mt-1 p-1.5 bg-white border border-[#E8E0F2] rounded-2xl shadow-lg flex items-center gap-1.5 animate-fadeIn">
                         {EMOJI_OPTIONS.map((emoji) => (
@@ -491,13 +681,52 @@ export default function GroupChat({ groupId = 'g1', members = [] }) {
               <div className="flex items-center gap-2 text-xs font-semibold text-[#9B7EDB] italic py-1">
                 <span className="w-2 h-2 rounded-full bg-[#9B7EDB] animate-bounce" />
                 <span>
-                  {typingUsers.join(', ')} {typingUsers.length === 1 ? 'is' : 'are'} typing a message...
+                  {typingUsers.join(', ')} {typingUsers.length === 1 ? 'is' : 'are'} typing...
                 </span>
               </div>
             )}
 
             <div ref={bottomRef} />
           </div>
+
+          {/* Mention Autocomplete Suggestions Box */}
+          {showMentionSuggestions && (
+            <div className="p-2 bg-white border-t border-[#E8E0F2] flex items-center gap-2 overflow-x-auto text-xs">
+              <span className="text-[10px] font-bold text-[#776B88] px-2">Mention member:</span>
+              {availableMembers
+                .filter((m) => m.name.toLowerCase().includes(mentionQuery))
+                .slice(0, 4)
+                .map((m) => (
+                  <button
+                    key={m.id || m._id}
+                    onClick={() => handleSelectMention(m)}
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-[#F8F5FF] hover:bg-[#E9DFFF] text-[#493A63] font-bold transition-colors"
+                  >
+                    <span>@{m.name}</span>
+                  </button>
+                ))}
+            </div>
+          )}
+
+          {/* Attachment Preview Drawer */}
+          {attachments.length > 0 && (
+            <div className="p-2 bg-[#F8F5FF] border-t border-[#E8E0F2] flex items-center gap-2 overflow-x-auto">
+              {attachments.map((att, i) => (
+                <div
+                  key={i}
+                  className="flex items-center gap-2 px-3 py-1 rounded-xl bg-white border border-[#E8E0F2] text-xs font-medium text-[#493A63]"
+                >
+                  <span>📎 {att.name}</span>
+                  <button
+                    onClick={() => setAttachments((prev) => prev.filter((_, idx) => idx !== i))}
+                    className="text-red-500 font-bold ml-1"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Reply Context Banner */}
           {replyingTo && (
@@ -515,15 +744,36 @@ export default function GroupChat({ groupId = 'g1', members = [] }) {
             </div>
           )}
 
-          {/* Message Input Box */}
+          {/* Message Input Form */}
           <form onSubmit={handleSend} className="p-3 bg-white border-t border-[#E8E0F2] flex items-center gap-2">
+            {/* File Attachment Hidden Input */}
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileUpload}
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              title="Attach File / Document"
+              className="p-2.5 rounded-xl border border-[#E8E0F2] hover:bg-[#F8F5FF] text-[#776B88] hover:text-[#493A63] transition-colors"
+            >
+              📎
+            </button>
+
             <input
               type="text"
               value={input}
               onChange={handleInputChange}
-              placeholder={replyingTo ? `Replying to ${replyingTo.senderName}...` : `Message #${activeChannel}...`}
+              placeholder={
+                replyingTo
+                  ? `Replying to ${replyingTo.senderName}...`
+                  : `Message #${activeChannel}... (Use @ to mention)`
+              }
               className="flex-1 px-4 py-2.5 rounded-xl border border-[#E8E0F2] bg-[#F8F5FF] text-[#493A63] font-semibold text-xs focus:outline-none focus:border-[#9B7EDB] transition-all"
             />
+
             <button
               type="submit"
               className="px-5 py-2.5 rounded-xl bg-[#9B7EDB] hover:bg-[#7A58C1] text-white font-bold text-xs shadow-xs transition-all flex items-center gap-1.5"
