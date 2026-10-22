@@ -2,8 +2,8 @@ import api from './api'
 
 const notificationService = {
   getNotifications: () => api.get('/notifications'),
-  markRead: (id) => api.put(`/notifications/${id}/read`),
-  markAllRead: () => api.put('/notifications/read-all'),
+  markAsRead: (id) => api.patch(`/notifications/${id}/read`),
+  markAllAsRead: () => api.patch('/notifications/read-all'),
 }
 
 export default notificationService

@@ -14,6 +14,9 @@ import userRoutes from './routes/userRoutes.js'
 import groupRoutes from './routes/groupRoutes.js'
 import taskRoutes from './routes/taskRoutes.js'
 
+import notificationRoutes from './routes/notificationRoutes.js'
+import activityRoutes from './routes/activityRoutes.js'
+
 const app = express()
 const httpServer = http.createServer(app)
 const port = process.env.PORT || 5000
@@ -26,8 +29,10 @@ app.use('/api/tasks', taskRoutes)
 // Member 4 - Resource/File APIs
 app.use('/api/files', fileRoutes)
 
-// Member 2 - Chat/Messaging APIs
+// Member 2 - Collaboration, Chat, Notifications & Activity APIs
 app.use('/api', messageRoutes)
+app.use('/api/notifications', notificationRoutes)
+app.use('/api/activities', activityRoutes)
 
 // Member 1 - Authentication, Users & Groups APIs
 app.use('/api/auth', authRoutes)
