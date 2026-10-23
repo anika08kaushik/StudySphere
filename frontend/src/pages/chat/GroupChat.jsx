@@ -1,7 +1,8 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import Avatar from '../../components/ui/Avatar'
 import { useApp } from '../../context/AppContext'
 import { useAuth } from '../../hooks/useAuth'
+import api from '../../services/api'
 import chatService from '../../services/chatService'
 import socket, {
   connectSocket,
@@ -22,10 +23,14 @@ const CHANNELS = [
 ]
 
 const EMOJI_OPTIONS = ['👍', '❤️', '💡', '🔥', '👏', '🎉']
+const STUDENT_LOUNGE_DEFAULT_ID = '6adba5f22f2a151cd35c6192'
 
 export default function GroupChat({ groupId = 'g1', members = [] }) {
   const { avatarConfig } = useApp()
-  const { user } = useAuth()
+  const { user, token } = useAuth()
+  const [activeGroupId, setActiveGroupId] = useState(
+    groupId && groupId !== 'g1' ? groupId : STUDENT_LOUNGE_DEFAULT_ID
+  )
   const [activeChannel, setActiveChannel] = useState('general')
   const [msgList, setMsgList] = useState([])
   const [input, setInput] = useState('')
@@ -34,6 +39,7 @@ export default function GroupChat({ groupId = 'g1', members = [] }) {
   const [editInput, setEditInput] = useState('')
   const [typingUsers, setTypingUsers] = useState([])
   const [onlineMembers, setOnlineMembers] = useState(members)
+  const [roomMembers, setRoomMembers] = useState(members)
   const [searchQuery, setSearchQuery] = useState('')
   const [activeReactionPicker, setActiveReactionPicker] = useState(null)
   const [pinnedMessage, setPinnedMessage] = useState(null)
@@ -52,30 +58,156 @@ export default function GroupChat({ groupId = 'g1', members = [] }) {
   const currentUserId = user?.id || user?._id || 'u1'
   const currentUserName = user?.name || avatarConfig?.name || 'You'
 
-  // Default known members for mention autocompletion
-  const availableMembers = members.length > 0 ? members : [
-    { id: 'u1', name: 'You', profilePhoto: null },
-    { id: 'u2', name: 'Rahul', profilePhoto: null },
-    { id: 'u3', name: 'Anika', profilePhoto: null },
-    { id: 'u4', name: 'Karan', profilePhoto: null },
-    { id: 'u5', name: 'Aryan', profilePhoto: null },
-  ]
+  const getMemberDisplayName = (member) => {
+    if (member?.name && member.name !== 'Classmate' && member.name !== 'Student') {
+      return member.name
+    }
+    const memberId = String(member?.id || member?._id || '')
+    const matched = [...members, ...roomMembers].find((m) => String(m.id || m._id) === memberId)
+    if (matched?.name) return matched.name
+    if (memberId && memberId === String(currentUserId)) return currentUserName
+    return member?.name || 'Student'
+  }
+
+  // Dynamic known members for mention autocompletion from presence, room members, and active chat participants
+  const mentionCandidates = useMemo(() => {
+    const candidateMap = new Map()
+
+    // 1. Online room members from socket presence
+    if (Array.isArray(onlineMembers)) {
+      onlineMembers.forEach((m) => {
+        const id = String(m?.id || m?._id || '')
+        const name = m?.name
+        if (id && name && name !== 'Classmate' && name !== 'Student') {
+          candidateMap.set(id, {
+            id,
+            _id: id,
+            name,
+            profilePhoto: m.profilePhoto,
+            isOnline: true,
+          })
+        }
+      })
+    }
+
+    // 2. Members from props and API
+    const allKnown = [...(members || []), ...(roomMembers || [])]
+    allKnown.forEach((m) => {
+      const id = String(m?.id || m?._id || '')
+      const name = m?.name
+      if (id && name && !candidateMap.has(id)) {
+        candidateMap.set(id, {
+          id,
+          _id: id,
+          name,
+          profilePhoto: m.profilePhoto,
+          isOnline: false,
+        })
+      }
+    })
+
+    // 3. Previous message senders in current lounge/channel
+    if (Array.isArray(msgList)) {
+      msgList.forEach((m) => {
+        const s = m?.senderId
+        const id = String(s?.id || s?._id || '')
+        const name = s?.name
+        if (id && name && name !== 'Classmate' && name !== 'Student' && !candidateMap.has(id)) {
+          candidateMap.set(id, {
+            id,
+            _id: id,
+            name,
+            profilePhoto: s.profilePhoto,
+            isOnline: false,
+          })
+        }
+      })
+    }
+
+    // Exclude current user from mentioning themselves
+    candidateMap.delete(String(currentUserId))
+
+    return Array.from(candidateMap.values())
+  }, [onlineMembers, members, roomMembers, msgList, currentUserId])
+
+  // Helper to highlight @mentions smoothly in chat bubbles
+  const renderMessageContent = (content, isMe) => {
+    if (!content) return null
+    const wordsAndMentions = content.split(/(@[\w-]+)/g)
+    return wordsAndMentions.map((part, i) => {
+      if (part.startsWith('@')) {
+        return (
+          <span
+            key={i}
+            className={`font-bold px-1.5 py-0.5 rounded-md text-[11px] inline-block ${
+              isMe
+                ? 'bg-white/30 text-white font-extrabold'
+                : 'bg-[#E9DFFF] text-[#6B46C1] border border-[#C9B8E8]'
+            }`}
+          >
+            {part}
+          </span>
+        )
+      }
+      return <span key={i}>{part}</span>
+    })
+  }
 
   useEffect(() => {
-    if (!groupId) return undefined
+    if (groupId && groupId !== 'g1') {
+      setActiveGroupId(groupId)
+      return
+    }
+
+    // Resolve real Student Lounge group ID from backend
+    const resolveLounge = async () => {
+      try {
+        const res = await api.get('/groups/lounge')
+        if (res.data?.data?._id) {
+          setActiveGroupId(String(res.data.data._id))
+        } else {
+          setActiveGroupId(STUDENT_LOUNGE_DEFAULT_ID)
+        }
+      } catch (err) {
+        console.warn('Student Lounge API resolution error, falling back:', err.message)
+        setActiveGroupId(STUDENT_LOUNGE_DEFAULT_ID)
+      }
+    }
+
+    resolveLounge()
+  }, [groupId])
+
+  // Fetch real group/lounge members for dynamic mentions and profiles
+  useEffect(() => {
+    if (!activeGroupId) return
+    const fetchRoomMembers = async () => {
+      try {
+        const res = await api.get(`/groups/${activeGroupId}/members`)
+        if (res.data?.data && Array.isArray(res.data.data)) {
+          setRoomMembers(res.data.data)
+        }
+      } catch (err) {
+        console.warn('Room members fetch fallback:', err.message)
+      }
+    }
+    fetchRoomMembers()
+  }, [activeGroupId])
+
+  useEffect(() => {
+    if (!activeGroupId) return undefined
 
     const loadMessages = async () => {
       try {
-        const response = await chatService.getMessages(groupId)
+        const response = await chatService.getMessages(activeGroupId)
         const data = response.data?.data || []
         if (data.length > 0) {
           setMsgList(data)
           const pinned = data.find((m) => m.pinned)
           if (pinned) setPinnedMessage(pinned.content)
-        } else {
+        } else if (activeGroupId === 'g1') {
           const formattedMocks = initialMockMessages.map((m) => ({
             _id: m._id,
-            groupId,
+            groupId: activeGroupId,
             senderId: {
               _id: m.sender,
               name: m.sender === 'u1' ? currentUserName : m.sender === 'u2' ? 'Rahul' : m.sender === 'u3' ? 'Anika' : 'Aryan',
@@ -88,24 +220,32 @@ export default function GroupChat({ groupId = 'g1', members = [] }) {
           }))
           setMsgList(formattedMocks)
           setPinnedMessage(formattedMocks[0]?.content)
+        } else {
+          setMsgList([])
+          setPinnedMessage(null)
         }
       } catch (loadError) {
-        console.warn('API message load fallback to mock data:', loadError.message)
-        const formattedMocks = initialMockMessages.map((m) => ({
-          _id: m._id,
-          groupId,
-          senderId: {
-            _id: m.sender,
-            name: m.sender === 'u1' ? currentUserName : m.sender === 'u2' ? 'Rahul' : m.sender === 'u3' ? 'Anika' : 'Aryan',
-            profilePhoto: null,
-          },
-          content: m.content,
-          reactions: [],
-          pinned: m._id === 'm1',
-          createdAt: m.createdAt,
-        }))
-        setMsgList(formattedMocks)
-        setPinnedMessage(formattedMocks[0]?.content)
+        console.warn('API message load fallback:', loadError.message)
+        if (activeGroupId === 'g1') {
+          const formattedMocks = initialMockMessages.map((m) => ({
+            _id: m._id,
+            groupId: activeGroupId,
+            senderId: {
+              _id: m.sender,
+              name: m.sender === 'u1' ? currentUserName : m.sender === 'u2' ? 'Rahul' : m.sender === 'u3' ? 'Anika' : 'Aryan',
+              profilePhoto: null,
+            },
+            content: m.content,
+            reactions: [],
+            pinned: m._id === 'm1',
+            createdAt: m.createdAt,
+          }))
+          setMsgList(formattedMocks)
+          setPinnedMessage(formattedMocks[0]?.content)
+        } else {
+          setMsgList([])
+          setPinnedMessage(null)
+        }
       }
     }
 
@@ -113,6 +253,22 @@ export default function GroupChat({ groupId = 'g1', members = [] }) {
     const handleNewMessage = (newMsg) => {
       setMsgList((current) => {
         if (current.some((m) => m._id === newMsg._id)) return current
+
+        const senderId = String(newMsg.senderId?._id || newMsg.senderId?.id || newMsg.senderId || '')
+        const tempIdx = current.findIndex(
+          (m) =>
+            (newMsg.clientTempId && m._id === newMsg.clientTempId) ||
+            (String(m._id).startsWith('temp-') &&
+              String(m.senderId?._id || m.senderId?.id) === senderId &&
+              (m.content === newMsg.content || (m.attachments?.length > 0 && newMsg.attachments?.length > 0)))
+        )
+
+        if (tempIdx !== -1) {
+          const next = [...current]
+          next[tempIdx] = newMsg
+          return next
+        }
+
         return [...current, newMsg]
       })
     }
@@ -141,7 +297,7 @@ export default function GroupChat({ groupId = 'g1', members = [] }) {
     }
 
     const handleTypingUpdate = (data) => {
-      if (String(data.groupId) !== String(groupId)) return
+      if (String(data.groupId) !== String(activeGroupId)) return
       if (data.userId === currentUserId) return
 
       setTypingUsers((prev) => {
@@ -178,9 +334,17 @@ export default function GroupChat({ groupId = 'g1', members = [] }) {
       }
     }
 
+    const handleChatError = (err) => {
+      console.warn('Chat error:', err.message || err)
+    }
+
     loadMessages()
-    connectSocket(user)
-    joinGroup(groupId)
+    if (user && token) {
+      connectSocket(user, token)
+    } else {
+      connectSocket(user)
+    }
+    joinGroup(activeGroupId)
 
     socket.on('message:new', handleNewMessage)
     socket.on('message:edited', handleMessageEdited)
@@ -189,6 +353,7 @@ export default function GroupChat({ groupId = 'g1', members = [] }) {
     socket.on('typing:update', handleTypingUpdate)
     socket.on('message:reaction_update', handleReactionUpdate)
     socket.on('presence:update', handlePresenceUpdate)
+    socket.on('chat:error', handleChatError)
 
     return () => {
       socket.off('message:new', handleNewMessage)
@@ -198,10 +363,10 @@ export default function GroupChat({ groupId = 'g1', members = [] }) {
       socket.off('typing:update', handleTypingUpdate)
       socket.off('message:reaction_update', handleReactionUpdate)
       socket.off('presence:update', handlePresenceUpdate)
-      leaveGroup(groupId)
-      disconnectSocket()
+      socket.off('chat:error', handleChatError)
+      leaveGroup(activeGroupId)
     }
-  }, [groupId, currentUserId, currentUserName, user])
+  }, [activeGroupId, user?.id || user?._id, token])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -221,13 +386,13 @@ export default function GroupChat({ groupId = 'g1', members = [] }) {
     }
 
     if (!typingTimeoutRef.current) {
-      emitTyping(groupId, true)
+      emitTyping(activeGroupId, true)
     } else {
       clearTimeout(typingTimeoutRef.current)
     }
 
     typingTimeoutRef.current = setTimeout(() => {
-      emitTyping(groupId, false)
+      emitTyping(activeGroupId, false)
       typingTimeoutRef.current = null
     }, 1500)
   }
@@ -244,13 +409,17 @@ export default function GroupChat({ groupId = 'g1', members = [] }) {
   const handleFileUpload = (e) => {
     const file = e.target.files?.[0]
     if (!file) return
-    const newAttachment = {
-      name: file.name,
-      url: URL.createObjectURL(file),
-      fileType: file.type.includes('pdf') ? 'pdf' : file.type.includes('image') ? 'image' : 'file',
-      size: Math.round(file.size / 1024),
+    const reader = new FileReader()
+    reader.onload = () => {
+      const newAttachment = {
+        name: file.name,
+        url: reader.result,
+        fileType: file.type.includes('pdf') ? 'pdf' : file.type.includes('image') ? 'image' : 'file',
+        size: Math.round(file.size / 1024),
+      }
+      setAttachments((prev) => [...prev, newAttachment])
     }
-    setAttachments((prev) => [...prev, newAttachment])
+    reader.readAsDataURL(file)
   }
 
   const handleSend = (e) => {
@@ -260,7 +429,7 @@ export default function GroupChat({ groupId = 'g1', members = [] }) {
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current)
       typingTimeoutRef.current = null
-      emitTyping(groupId, false)
+      emitTyping(activeGroupId, false)
     }
 
     const payloadReply = replyingTo
@@ -271,11 +440,37 @@ export default function GroupChat({ groupId = 'g1', members = [] }) {
         }
       : null
 
-    sendMessage(groupId, input.trim(), payloadReply, selectedMentions, attachments)
+    // Extract inline @mentions if typed directly
+    const candidateMembers = mentionCandidates
+    const mentionsFromText = []
+    const words = input.split(/\s+/)
+    words.forEach((w) => {
+      if (w.startsWith('@')) {
+        const queryName = w.slice(1).toLowerCase().replace(/[^a-zA-Z0-9_-]/g, '')
+        if (queryName) {
+          const matched = candidateMembers.find((m) => {
+            const dName = getMemberDisplayName(m).toLowerCase()
+            return dName === queryName || dName.startsWith(queryName) || m.name?.toLowerCase().startsWith(queryName)
+          })
+          if (matched) {
+            const mid = String(matched.id || matched._id)
+            if (!selectedMentions.includes(mid)) {
+              mentionsFromText.push(mid)
+            }
+          }
+        }
+      }
+    })
+    const finalMentions = Array.from(new Set([...selectedMentions, ...mentionsFromText]))
+
+    const clientTempId = `temp-${Date.now()}`
+    const targetGroupId = activeGroupId || STUDENT_LOUNGE_DEFAULT_ID
+
+    sendMessage(targetGroupId, input.trim(), payloadReply, finalMentions, attachments, clientTempId)
 
     const optimisticMsg = {
-      _id: `temp-${Date.now()}`,
-      groupId,
+      _id: clientTempId,
+      groupId: targetGroupId,
       senderId: {
         _id: currentUserId,
         id: currentUserId,
@@ -299,7 +494,7 @@ export default function GroupChat({ groupId = 'g1', members = [] }) {
   }
 
   const handleReactionClick = (messageId, emoji) => {
-    reactToMessage(groupId, messageId, emoji)
+    reactToMessage(activeGroupId, messageId, emoji)
     setMsgList((current) =>
       current.map((msg) => {
         if (msg._id !== messageId) return msg
@@ -321,7 +516,7 @@ export default function GroupChat({ groupId = 'g1', members = [] }) {
 
   const handleSaveEdit = (messageId) => {
     if (!editInput.trim()) return
-    socket.emit('message:edit', { groupId, messageId, content: editInput.trim() })
+    socket.emit('message:edit', { groupId: activeGroupId, messageId, content: editInput.trim() })
     setMsgList((prev) =>
       prev.map((m) =>
         m._id === messageId
@@ -334,13 +529,13 @@ export default function GroupChat({ groupId = 'g1', members = [] }) {
   }
 
   const handleDeleteMessage = (messageId) => {
-    socket.emit('message:delete', { groupId, messageId })
+    socket.emit('message:delete', { groupId: activeGroupId, messageId })
     setMsgList((prev) => prev.filter((m) => m._id !== messageId))
   }
 
   const handleTogglePin = (message) => {
     const nextPinState = !message.pinned
-    socket.emit('message:pin', { groupId, messageId: message._id, pinned: nextPinState })
+    socket.emit('message:pin', { groupId: activeGroupId, messageId: message._id, pinned: nextPinState })
     setMsgList((prev) =>
       prev.map((m) => (m._id === message._id ? { ...m, pinned: nextPinState } : m))
     )
@@ -439,18 +634,29 @@ export default function GroupChat({ groupId = 'g1', members = [] }) {
               </span>
             </div>
             <div className="space-y-2 max-h-40 overflow-y-auto">
-              {(onlineMembers.length > 0 ? onlineMembers : availableMembers).map((member, idx) => (
-                <div
-                  key={member.id || member._id || idx}
-                  className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-[#F8F5FF] transition-colors"
-                >
-                  <Avatar name={member.name || 'Student'} size="sm" status="online" src={member.profilePhoto} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold text-[#493A63] truncate">{member.name || 'Student'}</p>
-                    <p className="text-[10px] text-emerald-600 font-medium">In Lounge</p>
-                  </div>
-                </div>
-              ))}
+              {(() => {
+                const activeList =
+                  onlineMembers.length > 0
+                    ? onlineMembers
+                    : [{ id: currentUserId, name: currentUserName, profilePhoto: user?.profilePhoto }]
+                return activeList.map((member, idx) => {
+                  const isCurrent = String(member.id || member._id) === String(currentUserId)
+                  const rawName = getMemberDisplayName(member)
+                  const displayName = isCurrent ? `${rawName} (You)` : rawName
+                  return (
+                    <div
+                      key={member.id || member._id || idx}
+                      className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-[#F8F5FF] transition-colors"
+                    >
+                      <Avatar name={rawName} size="sm" status="online" src={member.profilePhoto} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-[#493A63] truncate">{displayName}</p>
+                        <p className="text-[10px] text-emerald-600 font-medium">In Lounge</p>
+                      </div>
+                    </div>
+                  )
+                })
+              })()}
             </div>
           </div>
         </div>
@@ -562,11 +768,11 @@ export default function GroupChat({ groupId = 'g1', members = [] }) {
                         }`}
                       >
                         {/* Highlights @mentions */}
-                        {message.content}
+                        {renderMessageContent(message.content, isMe)}
 
                         {/* File Attachments */}
                         {message.attachments && message.attachments.length > 0 && (
-                          <div className="mt-2 space-y-1.5 pt-2 border-t border-white/20">
+                          <div className={`space-y-1.5 ${message.content ? 'mt-2 pt-2 border-t border-white/20' : ''}`}>
                             {message.attachments.map((att, i) => (
                               <div
                                 key={i}
@@ -575,7 +781,20 @@ export default function GroupChat({ groupId = 'g1', members = [] }) {
                                 }`}
                               >
                                 <span>{att.fileType === 'pdf' ? '📄' : att.fileType === 'image' ? '🖼️' : '📎'}</span>
-                                <span className="font-bold truncate flex-1">{att.name}</span>
+                                {att.url ? (
+                                  <a
+                                    href={att.url}
+                                    download={att.name}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="font-bold truncate flex-1 hover:underline cursor-pointer"
+                                    title={`Download ${att.name}`}
+                                  >
+                                    {att.name} ⬇️
+                                  </a>
+                                ) : (
+                                  <span className="font-bold truncate flex-1">{att.name}</span>
+                                )}
                                 <span className="text-[10px] opacity-75">{att.size}KB</span>
                               </div>
                             ))}
@@ -691,20 +910,26 @@ export default function GroupChat({ groupId = 'g1', members = [] }) {
 
           {/* Mention Autocomplete Suggestions Box */}
           {showMentionSuggestions && (
-            <div className="p-2 bg-white border-t border-[#E8E0F2] flex items-center gap-2 overflow-x-auto text-xs">
-              <span className="text-[10px] font-bold text-[#776B88] px-2">Mention member:</span>
-              {availableMembers
+            <div className="p-2 bg-white border-t border-[#E8E0F2] flex items-center gap-2 overflow-x-auto text-xs animate-fadeIn">
+              <span className="text-[10px] font-bold text-[#776B88] px-2 whitespace-nowrap">Mention member:</span>
+              {mentionCandidates
                 .filter((m) => m.name.toLowerCase().includes(mentionQuery))
-                .slice(0, 4)
+                .slice(0, 5)
                 .map((m) => (
                   <button
                     key={m.id || m._id}
+                    type="button"
                     onClick={() => handleSelectMention(m)}
-                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-[#F8F5FF] hover:bg-[#E9DFFF] text-[#493A63] font-bold transition-colors"
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-[#F8F5FF] hover:bg-[#E9DFFF] text-[#493A63] font-bold transition-all shadow-2xs hover:scale-105"
                   >
+                    <Avatar name={m.name} size="xs" src={m.profilePhoto} />
                     <span>@{m.name}</span>
+                    {m.isOnline && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" title="Online now" />}
                   </button>
                 ))}
+              {mentionCandidates.filter((m) => m.name.toLowerCase().includes(mentionQuery)).length === 0 && (
+                <span className="text-[11px] text-[#776B88] italic px-2">No matching students found</span>
+              )}
             </div>
           )}
 

@@ -16,7 +16,7 @@ const messageSchema = new mongoose.Schema(
     },
     content: {
       type: String,
-      required: true,
+      default: '',
       trim: true,
     },
     replyTo: {

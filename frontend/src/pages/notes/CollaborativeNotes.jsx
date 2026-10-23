@@ -61,8 +61,26 @@ export default function CollaborativeNotes({ groupId = 'g1' }) {
     ytextRef.current = ydocRef.current.getText('content')
   }, [])
 
+  // Fetch real group notes list from backend
+  useEffect(() => {
+    const fetchNotes = async () => {
+      try {
+        const res = await noteService.getNotes(groupId)
+        const list = res.data?.data || []
+        setNotesList(list)
+        if (list.length > 0) {
+          setActiveNoteId(String(list[0]._id))
+        }
+      } catch (err) {
+        console.warn('Could not fetch notes list:', err.message)
+      }
+    }
+    fetchNotes()
+  }, [groupId])
+
   // Load note and register real-time sockets
   useEffect(() => {
+    if (!activeNoteId) return undefined
     const fetchNoteData = async () => {
       try {
         const res = await noteService.getNote(activeNoteId)

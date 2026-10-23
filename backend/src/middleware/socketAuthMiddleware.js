@@ -1,13 +1,25 @@
 import jwt from 'jsonwebtoken'
+import mongoose from 'mongoose'
+import User from '../models/User.js'
 
-const socketAuthMiddleware = (socket, next) => {
+const socketAuthMiddleware = async (socket, next) => {
   try {
     const token = socket.handshake.auth?.token
 
     if (token) {
       try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET)
-        socket.user = decoded
+
+        let dbUser = null
+        if (mongoose.connection.readyState === 1 && mongoose.isValidObjectId(decoded.userId)) {
+          dbUser = await User.findById(decoded.userId).select('name profilePhoto').lean()
+        }
+
+        socket.user = {
+          userId: String(dbUser?._id || decoded.userId),
+          name: dbUser?.name || socket.handshake.auth?.userName || decoded.name || 'Student',
+          profilePhoto: dbUser?.profilePhoto || socket.handshake.auth?.profilePhoto || null,
+        }
         return next()
       } catch (jwtError) {
         if (process.env.NODE_ENV === 'production') {

@@ -1,10 +1,11 @@
 import mongoose from 'mongoose'
 import Note from '../models/Note.js'
 import Membership from '../models/Membership.js'
+import User from '../models/User.js'
 import { createNotification } from '../services/notificationService.js'
 import { createActivity } from '../services/activityService.js'
 
-// In-memory fallback store for notes when MongoDB is offline
+// In-memory fallback store for notes when MongoDB is offline or using mock IDs
 const devNotesStore = new Map()
 
 const seedDevNotes = (groupId) => {
@@ -91,6 +92,15 @@ Output dimension = ((W - K + 2P) / S) + 1
   })
 }
 
+const resolveUserName = async (userId, fallbackName = 'Classmate') => {
+  if (fallbackName && fallbackName !== 'Classmate') return fallbackName
+  if (mongoose.connection.readyState === 1 && mongoose.isValidObjectId(userId)) {
+    const userDoc = await User.findById(userId).select('name').lean()
+    if (userDoc?.name) return userDoc.name
+  }
+  return fallbackName || 'Classmate'
+}
+
 // Helper to check user permission on note
 const checkNotePermission = (note, userId, action = 'edit') => {
   if (process.env.NODE_ENV !== 'production' && !userId) return true
@@ -114,8 +124,9 @@ export const getNotes = async (request, response) => {
   try {
     const { groupId } = request.params
     const stringGroupId = String(groupId)
+    const isDbReady = mongoose.connection.readyState === 1 && mongoose.isValidObjectId(stringGroupId)
 
-    if (mongoose.connection.readyState !== 1) {
+    if (!isDbReady) {
       if (devNotesStore.size === 0) seedDevNotes(stringGroupId)
       const list = Array.from(devNotesStore.values()).filter(
         (n) => String(n.groupId) === stringGroupId
@@ -123,9 +134,51 @@ export const getNotes = async (request, response) => {
       return response.status(200).json({ success: true, data: list })
     }
 
-    const notes = await Note.find({ groupId: stringGroupId })
+    let notes = await Note.find({ groupId: stringGroupId })
       .select('title author authorName updatedAt permissions')
       .sort({ updatedAt: -1 })
+
+    if (notes.length === 0) {
+      const defaultUser = await User.findOne()
+      const initialNote = await Note.create({
+        groupId: stringGroupId,
+        title: 'Convolutional Neural Networks (CNN) Notes',
+        content: `# Convolutional Neural Networks (CNN)
+
+## Overview & Core Concepts
+CNNs are specialized deep learning architectures designed for processing structured grid data, such as images.
+
+### Key Building Blocks:
+1. Convolutional Layer: Applies kernels/filters over the receptive field.
+2. Activation Function: Non-linear transformations (ReLU: max(0, x)).
+3. Pooling Layer: Dimensionality reduction (Max Pooling / Average Pooling).
+4. Fully Connected Layer: Classification head flattening spatial feature maps.
+
+### Formula Reference:
+Output dimension = ((W - K + 2P) / S) + 1
+- W: Input size
+- K: Kernel size
+- P: Padding
+- S: Stride`,
+        author: defaultUser?._id,
+        authorName: defaultUser?.name || 'Student',
+        permissions: {
+          owner: defaultUser?._id,
+          defaultAccess: 'editor',
+        },
+        versions: [
+          {
+            version: 'v1.0',
+            title: 'Convolutional Neural Networks (CNN) Notes',
+            content: `# Convolutional Neural Networks (CNN)\n\nInitial draft of CNN notes.`,
+            summary: 'Initial note creation',
+            modifiedBy: defaultUser?._id,
+            modifiedByName: defaultUser?.name || 'Student',
+          },
+        ],
+      })
+      notes = [initialNote]
+    }
 
     response.status(200).json({ success: true, data: notes })
   } catch (error) {
@@ -137,8 +190,9 @@ export const getNotes = async (request, response) => {
 export const getNoteById = async (request, response) => {
   try {
     const { noteId } = request.params
+    const isDbReady = mongoose.connection.readyState === 1 && mongoose.isValidObjectId(noteId)
 
-    if (mongoose.connection.readyState !== 1) {
+    if (!isDbReady) {
       if (!devNotesStore.has(noteId)) seedDevNotes()
       const note = devNotesStore.get(noteId) || Array.from(devNotesStore.values())[0]
       return response.status(200).json({ success: true, data: note })
@@ -161,14 +215,19 @@ export const createNote = async (request, response) => {
     const { groupId } = request.params
     const { title, content } = request.body
     const userId = request.user?.userId || 'u1'
-    const userName = request.user?.name || 'Classmate'
+    const userName = await resolveUserName(userId, request.user?.name)
     const stringGroupId = String(groupId)
 
     if (!title || !title.trim()) {
       return response.status(400).json({ success: false, message: 'Title is required' })
     }
 
-    if (mongoose.connection.readyState !== 1) {
+    const isDbReady =
+      mongoose.connection.readyState === 1 &&
+      mongoose.isValidObjectId(stringGroupId) &&
+      mongoose.isValidObjectId(userId)
+
+    if (!isDbReady) {
       const newId = `note-${Date.now()}`
       const noteObj = {
         _id: newId,
@@ -255,9 +314,10 @@ export const updateNote = async (request, response) => {
     const { noteId } = request.params
     const { title, content } = request.body
     const userId = request.user?.userId || 'u1'
-    const userName = request.user?.name || 'Classmate'
 
-    if (mongoose.connection.readyState !== 1) {
+    const isDbReady = mongoose.connection.readyState === 1 && mongoose.isValidObjectId(noteId)
+
+    if (!isDbReady) {
       const note = devNotesStore.get(noteId) || Array.from(devNotesStore.values())[0]
       if (!note) return response.status(404).json({ success: false, message: 'Note not found' })
 
@@ -297,13 +357,14 @@ export const createNoteVersion = async (request, response) => {
     const { noteId } = request.params
     const { summary } = request.body
     const userId = request.user?.userId || 'u1'
-    const userName = request.user?.name || 'Classmate'
+    const userName = await resolveUserName(userId, request.user?.name)
 
-    if (mongoose.connection.readyState !== 1) {
+    const isDbReady = mongoose.connection.readyState === 1 && mongoose.isValidObjectId(noteId)
+
+    if (!isDbReady) {
       const note = devNotesStore.get(noteId) || Array.from(devNotesStore.values())[0]
       if (!note) return response.status(404).json({ success: false, message: 'Note not found' })
 
-      const nextVerNum = (note.versions.length + 1).toFixed(1)
       const versionObj = {
         _id: `v-${Date.now()}`,
         version: `v1.${note.versions.length}`,
@@ -348,7 +409,9 @@ export const rollbackNoteVersion = async (request, response) => {
       return response.status(400).json({ success: false, message: 'versionId is required for rollback' })
     }
 
-    if (mongoose.connection.readyState !== 1) {
+    const isDbReady = mongoose.connection.readyState === 1 && mongoose.isValidObjectId(noteId)
+
+    if (!isDbReady) {
       const note = devNotesStore.get(noteId) || Array.from(devNotesStore.values())[0]
       if (!note) return response.status(404).json({ success: false, message: 'Note not found' })
 
@@ -405,13 +468,15 @@ export const addNoteComment = async (request, response) => {
     const { noteId } = request.params
     const { content, section, mentions = [] } = request.body
     const userId = request.user?.userId || 'u1'
-    const userName = request.user?.name || 'Classmate'
+    const userName = await resolveUserName(userId, request.user?.name)
 
     if (!content || !content.trim()) {
       return response.status(400).json({ success: false, message: 'Comment content is required' })
     }
 
-    if (mongoose.connection.readyState !== 1) {
+    const isDbReady = mongoose.connection.readyState === 1 && mongoose.isValidObjectId(noteId)
+
+    if (!isDbReady) {
       const note = devNotesStore.get(noteId) || Array.from(devNotesStore.values())[0]
       if (!note) return response.status(404).json({ success: false, message: 'Note not found' })
 
@@ -427,7 +492,6 @@ export const addNoteComment = async (request, response) => {
       }
       note.comments.push(commentObj)
 
-      // Notify mentioned peers
       for (const recipientId of mentions) {
         createNotification({
           recipient: recipientId,
@@ -480,13 +544,15 @@ export const replyNoteComment = async (request, response) => {
     const { noteId, commentId } = request.params
     const { content } = request.body
     const userId = request.user?.userId || 'u1'
-    const userName = request.user?.name || 'Classmate'
+    const userName = await resolveUserName(userId, request.user?.name)
 
     if (!content || !content.trim()) {
       return response.status(400).json({ success: false, message: 'Reply content is required' })
     }
 
-    if (mongoose.connection.readyState !== 1) {
+    const isDbReady = mongoose.connection.readyState === 1 && mongoose.isValidObjectId(noteId)
+
+    if (!isDbReady) {
       const note = devNotesStore.get(noteId) || Array.from(devNotesStore.values())[0]
       const comment = note?.comments?.find((c) => c._id === commentId)
       if (!comment) return response.status(404).json({ success: false, message: 'Comment not found' })
@@ -499,7 +565,7 @@ export const replyNoteComment = async (request, response) => {
         createdAt: new Date().toISOString(),
       }
       comment.replies.push(replyObj)
-      return response.status(201).json({ success: true, data: replyObj })
+      return response.status(201).json({ success: true, data: replyObj, comment })
     }
 
     const note = await Note.findById(noteId)
@@ -516,7 +582,8 @@ export const replyNoteComment = async (request, response) => {
     comment.replies.push(replyObj)
     await note.save()
 
-    response.status(201).json({ success: true, data: comment.replies[comment.replies.length - 1] })
+    const createdReply = comment.replies[comment.replies.length - 1]
+    response.status(201).json({ success: true, data: createdReply, comment })
   } catch (error) {
     console.error('Reply comment error:', error)
     response.status(500).json({ success: false, message: 'Failed to reply to comment' })
@@ -526,8 +593,9 @@ export const replyNoteComment = async (request, response) => {
 export const resolveNoteComment = async (request, response) => {
   try {
     const { noteId, commentId } = request.params
+    const isDbReady = mongoose.connection.readyState === 1 && mongoose.isValidObjectId(noteId)
 
-    if (mongoose.connection.readyState !== 1) {
+    if (!isDbReady) {
       const note = devNotesStore.get(noteId) || Array.from(devNotesStore.values())[0]
       const comment = note?.comments?.find((c) => c._id === commentId)
       if (!comment) return response.status(404).json({ success: false, message: 'Comment not found' })
@@ -556,8 +624,9 @@ export const updateNotePermissions = async (request, response) => {
     const { noteId } = request.params
     const { defaultAccess, editors, viewers } = request.body
     const userId = request.user?.userId || 'u1'
+    const isDbReady = mongoose.connection.readyState === 1 && mongoose.isValidObjectId(noteId)
 
-    if (mongoose.connection.readyState !== 1) {
+    if (!isDbReady) {
       const note = devNotesStore.get(noteId) || Array.from(devNotesStore.values())[0]
       if (!note) return response.status(404).json({ success: false, message: 'Note not found' })
 

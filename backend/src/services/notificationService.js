@@ -52,9 +52,10 @@ export const createNotification = async ({
     // Real-time delivery
     const socketServer = io || globalIo
     if (socketServer) {
+      const payload = notificationObj?.toObject ? notificationObj.toObject() : notificationObj
       // Emit to recipient's personal user room and broadcast
-      socketServer.to(`user:${recipient}`).emit('notification:new', notificationObj)
-      socketServer.emit('notification:broadcast', notificationObj)
+      socketServer.to(`user:${recipient}`).emit('notification:new', payload)
+      socketServer.emit('notification:broadcast', payload)
     }
 
     return notificationObj

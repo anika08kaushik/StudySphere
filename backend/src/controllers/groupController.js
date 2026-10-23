@@ -166,19 +166,44 @@ export const getGroupById = async (request, response) => {
 export const getGroupMembers = async (request, response) => {
   try {
     const { id } = request.params
-    if (!mongoose.isValidObjectId(id)) return respondError(response, 400, 'Invalid group ID')
+    const rawId = String(id)
+    const stringGroupId = rawId === 'g1' ? '6adba5f22f2a151cd35c6192' : rawId
 
-    const group = await StudyGroup.findById(id)
+    if (!mongoose.isValidObjectId(stringGroupId)) {
+      return respondError(response, 400, 'Invalid group ID')
+    }
+
+    const group = await StudyGroup.findById(stringGroupId)
     if (!group) return respondError(response, 404, 'Group not found')
+
+    const isLounge = group.name === 'Student Lounge' || stringGroupId === '6adba5f22f2a151cd35c6192' || rawId === 'g1'
+    if (isLounge) {
+      const users = await User.find({}).select(userFields).limit(50).lean()
+      return response.status(200).json({
+        success: true,
+        data: users.map((u) => ({
+          id: u._id,
+          _id: u._id,
+          name: u.name,
+          email: u.email,
+          department: u.department,
+          semester: u.semester,
+          skills: u.skills,
+          bio: u.bio,
+          profilePhoto: u.profilePhoto,
+          role: 'member',
+        })),
+      })
+    }
 
     const membership = await Membership.findOne({
       userId: request.user.userId,
-      groupId: id,
+      groupId: stringGroupId,
       status: 'active',
     })
     if (!membership) return respondError(response, 403, 'You must be a member of this group')
 
-    const members = await Membership.find({ groupId: id, status: 'active' }).populate('userId', userFields)
+    const members = await Membership.find({ groupId: stringGroupId, status: 'active' }).populate('userId', userFields)
     return response.status(200).json({
       success: true,
       data: members
@@ -449,5 +474,27 @@ export const removeMember = async (request, response) => {
   } catch (error) {
     console.error('Remove member error:', error)
     return respondError(response, 500, 'Unable to remove member')
+  }
+}
+
+export const getStudentLounge = async (request, response) => {
+  try {
+    let lounge = await StudyGroup.findOne({ name: 'Student Lounge' })
+    if (!lounge) {
+      const firstUser = await User.findOne()
+      lounge = await StudyGroup.create({
+        name: 'Student Lounge',
+        description: 'General campus chat & discussions for all students',
+        subjects: ['Campus Life', 'General', 'Community'],
+        createdBy: firstUser?._id,
+      })
+    }
+    return response.status(200).json({
+      success: true,
+      data: lounge,
+    })
+  } catch (error) {
+    console.error('Get student lounge error:', error)
+    return respondError(response, 500, 'Unable to get Student Lounge')
   }
 }

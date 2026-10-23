@@ -15,6 +15,7 @@ import {
   acceptInvitation,
   declineInvitation,
   removeMember,
+  getStudentLounge,
 } from '../controllers/groupController.js'
 
 const router = express.Router()
@@ -22,6 +23,7 @@ const router = express.Router()
 router.post('/', authenticate, createGroup)
 router.get('/', authenticate, getAllGroups)
 router.get('/me', authenticate, getMyGroups)
+router.get('/lounge', getStudentLounge)
 router.get('/invitations', authenticate, getMyInvitations)
 router.post('/join', authenticate, joinGroup)
 router.post('/leave', authenticate, leaveGroup)

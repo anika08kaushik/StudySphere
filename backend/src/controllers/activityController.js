@@ -1,5 +1,6 @@
 import mongoose from 'mongoose'
 import Activity from '../models/Activity.js'
+import User from '../models/User.js'
 
 const devActivities = [
   { _id: 'a1', type: 'upload', user: 'u2', userName: 'Rahul', action: 'uploaded CNN.pdf', target: 'ML Resources', createdAt: new Date(Date.now() - 1000 * 60 * 30).toISOString() },
@@ -12,15 +13,17 @@ const devActivities = [
 export const getActivities = async (request, response) => {
   try {
     const { groupId } = request.query
+    const validGroupId = mongoose.isValidObjectId(groupId) ? groupId : null
 
-    if (mongoose.connection.readyState !== 1) {
+    if (mongoose.connection.readyState !== 1 || (groupId && !validGroupId)) {
+      const filtered = groupId ? devActivities.filter((a) => a.groupId === groupId) : devActivities
       return response.status(200).json({
         success: true,
-        data: devActivities,
+        data: filtered,
       })
     }
 
-    const query = groupId ? { groupId } : {}
+    const query = validGroupId ? { groupId: validGroupId } : {}
     const activities = await Activity.find(query)
       .sort({ createdAt: -1 })
       .limit(50)
@@ -39,13 +42,22 @@ export const createActivity = async (request, response) => {
   try {
     const { type, action, target, groupId } = request.body
     const userId = request.user?.userId || null
-    const userName = request.user?.name || 'Classmate'
+    let userName = request.user?.name
+    if (!userName && mongoose.connection.readyState === 1 && mongoose.isValidObjectId(userId)) {
+      const userDoc = await User.findById(userId).select('name').lean()
+      if (userDoc?.name) userName = userDoc.name
+    }
+    userName = userName || 'Classmate'
 
     if (!action) {
       return response.status(400).json({ success: false, message: 'Action is required' })
     }
 
-    if (mongoose.connection.readyState !== 1) {
+    const isDbReady = mongoose.connection.readyState === 1
+    const validUserId = mongoose.isValidObjectId(userId) ? userId : null
+    const validGroupId = mongoose.isValidObjectId(groupId) ? groupId : null
+
+    if (!isDbReady) {
       const mockActivity = {
         _id: `a-${Date.now()}`,
         type: type || 'task',
@@ -61,9 +73,9 @@ export const createActivity = async (request, response) => {
     }
 
     const activity = await Activity.create({
-      user: userId,
+      user: validUserId,
       userName,
-      groupId: groupId || null,
+      groupId: validGroupId,
       type: type || 'task',
       action,
       target: target || '',

@@ -1,6 +1,7 @@
 import mongoose from 'mongoose'
 import Message from '../models/Message.js'
 import Membership from '../models/Membership.js'
+import StudyGroup from '../models/StudyGroup.js'
 import { createNotification } from '../services/notificationService.js'
 
 // In-memory fallback message storage for local development without MongoDB
@@ -9,15 +10,17 @@ const devMessagesStore = new Map()
 export const getMessages = async (request, response) => {
   try {
     const { groupId } = request.params
+    const rawGroupId = String(groupId)
+    const stringGroupId = rawGroupId === 'g1' ? '6adba5f22f2a151cd35c6192' : rawGroupId
     const userId = request.user?.userId || 'u1'
-    const stringGroupId = String(groupId)
+    const isDbReady = mongoose.connection.readyState === 1 && mongoose.isValidObjectId(stringGroupId)
 
-    if (mongoose.connection.readyState !== 1) {
-      if (!devMessagesStore.has(stringGroupId)) {
-        devMessagesStore.set(stringGroupId, [
+    if (!isDbReady) {
+      if (!devMessagesStore.has(rawGroupId)) {
+        devMessagesStore.set(rawGroupId, [
           {
             _id: 'msg-demo-1',
-            groupId: stringGroupId,
+            groupId: rawGroupId,
             senderId: { _id: 'u2', name: 'Rahul', profilePhoto: null },
             content: 'Hey everyone! Welcome to the group chat.',
             createdAt: new Date(Date.now() - 3600000).toISOString(),
@@ -26,7 +29,7 @@ export const getMessages = async (request, response) => {
           },
           {
             _id: 'msg-demo-2',
-            groupId: stringGroupId,
+            groupId: rawGroupId,
             senderId: { _id: 'u3', name: 'Anika', profilePhoto: null },
             content: "Let's review the notes and collaborate on upcoming tasks.",
             createdAt: new Date(Date.now() - 1800000).toISOString(),
@@ -36,27 +39,49 @@ export const getMessages = async (request, response) => {
         ])
       }
 
+      let data = devMessagesStore.get(rawGroupId)
+      const { search } = request.query
+      if (search && search.trim()) {
+        const s = search.trim().toLowerCase()
+        data = data.filter((m) => m.content?.toLowerCase().includes(s))
+      }
+
       return response.status(200).json({
         success: true,
-        data: devMessagesStore.get(stringGroupId),
+        data,
       })
     }
 
-    // Verify group membership
-    const membership = await Membership.findOne({
-      userId,
-      groupId: stringGroupId,
-      status: 'active',
-    })
+    // Verify group membership (Student Lounge is public to all campus members)
+    const groupDoc = isDbReady ? await StudyGroup.findById(stringGroupId).select('name').lean() : null
+    const isLounge = (groupDoc && groupDoc.name === 'Student Lounge') || stringGroupId === '6adba5f22f2a151cd35c6192' || rawGroupId === 'g1'
 
-    if (!membership && process.env.NODE_ENV === 'production') {
-      return response.status(403).json({
-        success: false,
-        message: 'You are not an active member of this study group',
+    if (!isLounge) {
+      const membership = await Membership.findOne({
+        userId,
+        groupId: stringGroupId,
+        status: 'active',
       })
+
+      if (!membership && process.env.NODE_ENV === 'production') {
+        return response.status(403).json({
+          success: false,
+          message: 'You are not an active member of this study group',
+        })
+      }
     }
 
-    const messages = await Message.find({ groupId: stringGroupId })
+    const { search } = request.query
+    const query = { groupId: stringGroupId }
+    if (search && search.trim()) {
+      const regex = new RegExp(search.trim(), 'i')
+      query.$or = [
+        { content: regex },
+        { 'attachments.name': regex },
+      ]
+    }
+
+    const messages = await Message.find(query)
       .populate('senderId', 'name profilePhoto')
       .populate('replyTo.messageId')
       .sort({ createdAt: 1 })
@@ -82,19 +107,26 @@ export const createMessage = async (request, response) => {
     const userName = request.user?.name || 'Classmate'
     const stringGroupId = String(groupId)
 
-    if (!content || !content.trim()) {
+    const trimmedContent = (content || '').trim()
+
+    if (!trimmedContent && (!attachments || attachments.length === 0)) {
       return response.status(400).json({
         success: false,
-        message: 'Message content is required',
+        message: 'Message content or attachment is required',
       })
     }
 
-    if (mongoose.connection.readyState !== 1) {
+    const isDbReady =
+      mongoose.connection.readyState === 1 &&
+      mongoose.isValidObjectId(stringGroupId) &&
+      mongoose.isValidObjectId(userId)
+
+    if (!isDbReady) {
       const mockCreated = {
         _id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
         groupId: stringGroupId,
         senderId: { _id: userId, name: userName, profilePhoto: null },
-        content: content.trim(),
+        content: trimmedContent,
         replyTo: replyTo || null,
         mentions,
         attachments,
@@ -115,7 +147,7 @@ export const createMessage = async (request, response) => {
             groupId: stringGroupId,
             type: 'mention',
             title: 'New Chat Mention',
-            message: `${userName} mentioned you in chat: "${content.slice(0, 50)}..."`,
+            message: `${userName} mentioned you in chat: "${trimmedContent.slice(0, 50)}..."`,
           })
         }
       }
@@ -126,23 +158,28 @@ export const createMessage = async (request, response) => {
       })
     }
 
-    const membership = await Membership.findOne({
-      userId,
-      groupId: stringGroupId,
-      status: 'active',
-    })
+    const groupDoc = await StudyGroup.findById(stringGroupId).select('name').lean()
+    const isLounge = groupDoc && groupDoc.name === 'Student Lounge'
 
-    if (!membership && process.env.NODE_ENV === 'production') {
-      return response.status(403).json({
-        success: false,
-        message: 'You are not an active member of this study group',
+    if (!isLounge) {
+      const membership = await Membership.findOne({
+        userId,
+        groupId: stringGroupId,
+        status: 'active',
       })
+
+      if (!membership && process.env.NODE_ENV === 'production') {
+        return response.status(403).json({
+          success: false,
+          message: 'You are not an active member of this study group',
+        })
+      }
     }
 
     const message = await Message.create({
       groupId: stringGroupId,
       senderId: userId,
-      content: content.trim(),
+      content: trimmedContent,
       replyTo: replyTo || null,
       mentions,
       attachments,
@@ -187,7 +224,9 @@ export const editMessage = async (request, response) => {
       return response.status(400).json({ success: false, message: 'Updated content is required' })
     }
 
-    if (mongoose.connection.readyState !== 1) {
+    const isDbReady = mongoose.connection.readyState === 1 && mongoose.isValidObjectId(messageId)
+
+    if (!isDbReady) {
       let found = null
       for (const list of devMessagesStore.values()) {
         const item = list.find((m) => m._id === messageId)
@@ -236,7 +275,9 @@ export const deleteMessage = async (request, response) => {
     const { messageId } = request.params
     const userId = request.user?.userId || 'u1'
 
-    if (mongoose.connection.readyState !== 1) {
+    const isDbReady = mongoose.connection.readyState === 1 && mongoose.isValidObjectId(messageId)
+
+    if (!isDbReady) {
       let deleted = false
       for (const [groupId, list] of devMessagesStore.entries()) {
         const idx = list.findIndex((m) => m._id === messageId)
@@ -279,8 +320,9 @@ export const deleteMessage = async (request, response) => {
 export const togglePinMessage = async (request, response) => {
   try {
     const { messageId } = request.params
+    const isDbReady = mongoose.connection.readyState === 1 && mongoose.isValidObjectId(messageId)
 
-    if (mongoose.connection.readyState !== 1) {
+    if (!isDbReady) {
       for (const list of devMessagesStore.values()) {
         const item = list.find((m) => m._id === messageId)
         if (item) {
@@ -317,7 +359,9 @@ export const toggleReaction = async (request, response) => {
       return response.status(400).json({ success: false, message: 'Emoji is required' })
     }
 
-    if (mongoose.connection.readyState !== 1) {
+    const isDbReady = mongoose.connection.readyState === 1 && mongoose.isValidObjectId(messageId)
+
+    if (!isDbReady) {
       return response.status(200).json({ success: true, message: 'Reaction toggled' })
     }
 

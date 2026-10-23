@@ -6,7 +6,7 @@ const USER_COLORS = ['#9B7EDB', '#38BDF8', '#34D399', '#F472B6', '#FBBF24', '#A7
 const registerNotesSocket = (io, socket) => {
   const getCollaboratorInfo = () => {
     const userId = socket.user?.userId || socket.id
-    const userName = socket.user?.name || 'Classmate'
+    const userName = socket.user?.name || socket.handshake.auth?.userName || 'Student'
     // Deterministic color assignment based on userId
     const colorIndex = Math.abs(
       userId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)
@@ -61,7 +61,7 @@ const registerNotesSocket = (io, socket) => {
   socket.on('note:change', ({ noteId, content, update, cursor }) => {
     const roomKey = `note:${noteId}`
     const userId = socket.user?.userId || socket.id
-    const userName = socket.user?.name || 'Classmate'
+    const userName = socket.user?.name || socket.handshake.auth?.userName || 'Student'
 
     socket.to(roomKey).emit('note:remote_change', {
       noteId,
@@ -77,7 +77,7 @@ const registerNotesSocket = (io, socket) => {
   socket.on('note:cursor', ({ noteId, cursor, selection }) => {
     const roomKey = `note:${noteId}`
     const userId = socket.user?.userId || socket.id
-    const userName = socket.user?.name || 'Classmate'
+    const userName = socket.user?.name || socket.handshake.auth?.userName || 'Student'
 
     if (noteCollaborators.has(noteId)) {
       const room = noteCollaborators.get(noteId)
@@ -111,7 +111,7 @@ const registerNotesSocket = (io, socket) => {
       action,
       version,
       content,
-      modifiedByName: socket.user?.name || 'Classmate',
+      modifiedByName: socket.user?.name || socket.handshake.auth?.userName || 'Student',
     })
   })
 

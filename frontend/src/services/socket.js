@@ -1,54 +1,93 @@
 import { io } from 'socket.io-client'
 
+const getInitialToken = () =>
+  sessionStorage.getItem('studysphere_token') || localStorage.getItem('studysphere_token')
+
 const socket = io(
   import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000',
   {
     autoConnect: false,
     auth: {
-      token: localStorage.getItem('studysphere_token'),
+      token: getInitialToken(),
     },
   }
 )
 
-export const connectSocket = (userOverride) => {
-  const token = localStorage.getItem('studysphere_token')
-  const storedUser = localStorage.getItem('studysphere_user')
-  const user = userOverride || (storedUser ? JSON.parse(storedUser) : null)
+let currentActiveGroup = null
+
+export const connectSocket = (userOverride, tokenOverride) => {
+  const token =
+    tokenOverride ||
+    sessionStorage.getItem('studysphere_token') ||
+    localStorage.getItem('studysphere_token')
+  const storedUserRaw =
+    sessionStorage.getItem('studysphere_user') ||
+    localStorage.getItem('studysphere_user')
+  let storedUser = null
+  try {
+    storedUser = storedUserRaw ? JSON.parse(storedUserRaw) : null
+  } catch {
+    storedUser = null
+  }
+  const user = userOverride || storedUser
+
+  const tokenChanged = socket.auth?.token !== token
+  const userChanged = String(socket.auth?.userId || '') !== String(user?._id || user?.id || '')
 
   socket.auth = {
     token,
     userId: user?._id || user?.id || 'u1',
-    userName: user?.name || 'Classmate',
+    userName: user?.name || 'Student',
     profilePhoto: user?.profilePhoto || null,
   }
 
-  if (!socket.connected) {
+  if (socket.connected && (tokenChanged || userChanged)) {
+    socket.disconnect().connect()
+  } else if (!socket.connected) {
     socket.connect()
   }
 }
 
 export const disconnectSocket = () => {
+  currentActiveGroup = null
   if (socket.connected) {
     socket.disconnect()
   }
 }
 
+// Automatically rejoin room if connection or reconnection happens
+socket.on('connect', () => {
+  if (currentActiveGroup) {
+    socket.emit('group:join', currentActiveGroup)
+  }
+})
+
 // Group Chat Sockets
 export const joinGroup = (groupId) => {
-  socket.emit('group:join', String(groupId))
+  if (!groupId) return
+  currentActiveGroup = String(groupId)
+  if (socket.connected) {
+    socket.emit('group:join', currentActiveGroup)
+  }
 }
 
 export const leaveGroup = (groupId) => {
-  socket.emit('group:leave', String(groupId))
+  if (currentActiveGroup === String(groupId)) {
+    currentActiveGroup = null
+  }
+  if (socket.connected) {
+    socket.emit('group:leave', String(groupId))
+  }
 }
 
-export const sendMessage = (groupId, content, replyTo = null, mentions = [], attachments = []) => {
+export const sendMessage = (groupId, content, replyTo = null, mentions = [], attachments = [], clientTempId = null) => {
   socket.emit('message:send', {
     groupId: String(groupId),
     content,
     replyTo,
     mentions,
     attachments,
+    clientTempId,
   })
 }
 
@@ -106,6 +145,17 @@ export const sendNoteVersion = (noteId, action, version, content) => {
     version,
     content,
   })
+}
+
+// Notifications Real-Time Socket Emitters
+export const onNewNotification = (handler) => {
+  socket.on('notification:new', handler)
+  socket.on('notification:broadcast', handler)
+}
+
+export const offNewNotification = (handler) => {
+  socket.off('notification:new', handler)
+  socket.off('notification:broadcast', handler)
 }
 
 export default socket

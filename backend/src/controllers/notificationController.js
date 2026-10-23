@@ -11,9 +11,10 @@ const devNotifications = [
 
 export const getNotifications = async (request, response) => {
   try {
-    const userId = request.user?.userId
+    const userId = request.user?.userId || request.user?._id || request.user?.id
+    const isDbReady = mongoose.connection.readyState === 1 && mongoose.isValidObjectId(userId)
 
-    if (mongoose.connection.readyState !== 1 || !userId) {
+    if (!isDbReady) {
       return response.status(200).json({
         success: true,
         data: devNotifications,
@@ -21,6 +22,7 @@ export const getNotifications = async (request, response) => {
     }
 
     const notifications = await Notification.find({ recipient: userId })
+      .populate('sender', 'name profilePhoto email')
       .sort({ createdAt: -1 })
       .limit(50)
 
@@ -38,8 +40,9 @@ export const markNotificationRead = async (request, response) => {
   try {
     const { id } = request.params
     const userId = request.user?.userId
+    const isDbReady = mongoose.connection.readyState === 1 && mongoose.isValidObjectId(id) && mongoose.isValidObjectId(userId)
 
-    if (mongoose.connection.readyState !== 1 || !userId) {
+    if (!isDbReady) {
       const item = devNotifications.find((n) => n._id === id)
       if (item) item.read = true
       return response.status(200).json({ success: true, message: 'Notification marked as read' })
@@ -56,8 +59,9 @@ export const markNotificationRead = async (request, response) => {
 export const markAllNotificationsRead = async (request, response) => {
   try {
     const userId = request.user?.userId
+    const isDbReady = mongoose.connection.readyState === 1 && mongoose.isValidObjectId(userId)
 
-    if (mongoose.connection.readyState !== 1 || !userId) {
+    if (!isDbReady) {
       devNotifications.forEach((n) => { n.read = true })
       return response.status(200).json({ success: true, message: 'All notifications marked as read' })
     }
