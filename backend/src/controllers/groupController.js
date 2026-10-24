@@ -105,6 +105,7 @@ export const getMyGroups = async (request, response) => {
     const groups = memberships
       .filter((membership) => membership.groupId)
       .map((membership) => ({
+        _id: membership.groupId._id,
         id: membership.groupId._id,
         name: membership.groupId.name,
         description: membership.groupId.description,
