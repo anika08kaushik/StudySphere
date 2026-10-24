@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
+import { Link } from 'react-router-dom'
 import LazyCanvas from '../../components/three/shared/LazyCanvas'
 import LibraryScene from '../../components/three/library/LibraryScene'
 import AvatarPicker from '../../components/three/avatars/AvatarPicker'
 import ExplorePeoplePanel from '../../components/focus/ExplorePeoplePanel'
+import YearHeatmap from '../../components/focus/YearHeatmap'
 import { useApp } from '../../context/AppContext'
 import api from '../../services/api'
 import focusService from '../../services/focusService'
@@ -51,6 +53,9 @@ export default function FocusRoom() {
   // Phase 9: Explore People & private chat
   const [showExplorePanel, setShowExplorePanel] = useState(false)
   const [pendingExploreCount, setPendingExploreCount] = useState(0)
+
+  // Phase 11: 365-day focus view
+  const [showYearView, setShowYearView] = useState(false)
 
   // Pomodoro Timer State
   const [timerMode, setTimerMode] = useState('FOCUS')
@@ -581,6 +586,24 @@ export default function FocusRoom() {
             <span>{participants.length} in room</span>
           </button>
 
+          {/* Phase 11: 365-Day Focus View */}
+          <button
+            onClick={() => setShowYearView(true)}
+            title="Year-at-a-glance focus activity"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#F8F5FF] hover:bg-[#F3ECFE] border border-[#E8E0F2] text-xs font-bold text-[#493A63] cursor-pointer transition-colors"
+          >
+            <span>🗓️</span>
+            <span>365</span>
+          </button>
+
+          {/* Phase 10: Calendar Link */}
+          <Link
+            to="/calendar"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#F8F5FF] hover:bg-[#F3ECFE] border border-[#E8E0F2] text-xs font-bold text-[#493A63] transition-colors"
+          >
+            <span>📅</span>
+          </Link>
+
           {/* Explore People & Private Chat (Phase 9) */}
           <button
             onClick={() => {
@@ -848,6 +871,9 @@ export default function FocusRoom() {
           />
         </LazyCanvas>
       </div>
+
+      {/* Phase 11: 365-Day Focus Heatmap Modal */}
+      {showYearView && <YearHeatmap onClose={() => setShowYearView(false)} currentGroupId={selectedGroupId} />}
 
       {/* Avatar Picker Modal Overlay */}
       {showAvatarPicker && (

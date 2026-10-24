@@ -268,14 +268,21 @@ export const clearTimerState = async (request, response) => {
 export const getSessions = async (request, response) => {
   try {
     const userId = request.user?.userId
-    const { groupId, limit = 20, page = 1 } = request.query
+    // Phase 11: from/to lets the 365-day view pull a whole year at once
+    const { groupId, limit = 20, page = 1, from, to } = request.query
 
     const filter = { user: userId }
     if (groupId && isValidObjectId(groupId)) {
       filter.groupId = groupId
     }
+    if (from && !Number.isNaN(new Date(from).getTime())) {
+      filter.startTime = { ...(filter.startTime || {}), $gte: new Date(from) }
+    }
+    if (to && !Number.isNaN(new Date(to).getTime())) {
+      filter.startTime = { ...(filter.startTime || {}), $lte: new Date(to) }
+    }
 
-    const numLimit = Math.min(Math.max(Number(limit) || 20, 1), 100)
+    const numLimit = Math.min(Math.max(Number(limit) || 20, 1), 400)
     const numPage = Math.max(Number(page) || 1, 1)
     const skip = (numPage - 1) * numLimit
 

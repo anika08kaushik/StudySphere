@@ -15,14 +15,23 @@ import Decorations from './Decorations'
 import EnvironmentLighting from './EnvironmentLighting'
 import { ROOM } from './materials'
 
+// Phase 11: slightly wider desk spacing so avatars never overlap and stay clearly visible
 const DESK_LAYOUT = [
-  { id: 'desk-01', pos: [-3, 0, -1], rot: [0, 0, 0], chairRot: [0, Math.PI, 0] },
-  { id: 'desk-02', pos: [3, 0, -1], rot: [0, 0, 0], chairRot: [0, Math.PI, 0] },
-  { id: 'desk-03', pos: [-3, 0, 3], rot: [0, Math.PI, 0], chairRot: [0, 0, 0] },
-  { id: 'desk-04', pos: [3, 0, 3], rot: [0, Math.PI, 0], chairRot: [0, 0, 0] },
+  { id: 'desk-01', pos: [-3.6, 0, -1.2], rot: [0, 0, 0], chairRot: [0, Math.PI, 0] },
+  { id: 'desk-02', pos: [3.6, 0, -1.2], rot: [0, 0, 0], chairRot: [0, Math.PI, 0] },
+  { id: 'desk-03', pos: [-3.6, 0, 3.2], rot: [0, Math.PI, 0], chairRot: [0, 0, 0] },
+  { id: 'desk-04', pos: [3.6, 0, 3.2], rot: [0, Math.PI, 0], chairRot: [0, 0, 0] },
   { id: 'desk-05', pos: [0, 0, 1], rot: [0, Math.PI / 2, 0], chairRot: [0, Math.PI / 2, 0] },
-  { id: 'desk-06', pos: [0, 0, 4.5], rot: [0, -Math.PI / 2, 0], chairRot: [0, -Math.PI / 2, 0] },
+  { id: 'desk-06', pos: [0, 0, 4.7], rot: [0, -Math.PI / 2, 0], chairRot: [0, -Math.PI / 2, 0] },
 ]
+
+// Phase 11: status -> cute display metadata for the room presence labels
+const STATUS_META = {
+  STUDYING: { label: 'Focusing', emoji: '🍅', color: '#10B981', bg: '#ECFDF5' },
+  BREAK: { label: 'On Break', emoji: '☕', color: '#D97706', bg: '#FFFBEB' },
+  IDLE: { label: 'Hanging out', emoji: '✨', color: '#64748B', bg: '#F8FAFC' },
+}
+const statusMetaFor = (status) => STATUS_META[status] || STATUS_META.IDLE
 
 const BOOKSHELF_LAYOUT = [
   { pos: [-6, 0, -ROOM.depth / 2 + 0.3], rot: [0, 0, 0], seed: 10 },
@@ -84,6 +93,8 @@ export default function LibraryScene({
         const mockOccupant = !hasRealOccupants ? MOCK_OCCUPANTS[i] : null
         const currentOccupant = activeOccupant || mockOccupant
         const isUserDesk = selectedDeskIndex === i
+        // Mock occupants are always focused; real occupants carry a live status
+        const meta = statusMetaFor(mockOccupant ? 'STUDYING' : currentOccupant?.status)
         const isOccupied = !!currentOccupant || isUserDesk
         const chairPulled = !isOccupied
         const chairSign = desk.chairRot[1] === 0 ? 1 : -1
@@ -118,13 +129,32 @@ export default function LibraryScene({
                   rotation={[0, desk.rot[1] + Math.PI, 0]}
                   isSeated={true}
                 />
+                {/* Phase 11: cute, clearly visible name + status label */}
                 <Html
-                  position={[desk.pos[0], desk.pos[1] + 1.8, desk.pos[2]]}
+                  position={[desk.pos[0], desk.pos[1] + 1.95, desk.pos[2]]}
                   center
-                  distanceFactor={10}
+                  distanceFactor={9}
+                  zIndexRange={[20, 0]}
                 >
-                  <div className="px-2 py-0.5 rounded-full bg-white/95 backdrop-blur-md border border-[#E8E0F2] text-[#493A63] text-[10px] font-bold shadow-xs whitespace-nowrap">
-                    👤 {currentOccupant.userName || currentOccupant.name || 'Student'}
+                  <div
+                    className="px-2.5 py-1 rounded-2xl bg-white/95 backdrop-blur-md border-2 shadow-sm whitespace-nowrap flex items-center gap-1"
+                    style={{ borderColor: meta.color }}
+                  >
+                    <span
+                      className="w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-black text-white"
+                      style={{ backgroundColor: currentOccupant.avatarConfig?.outfitColor || currentOccupant.outfitColor || '#9B7EDB' }}
+                    >
+                      {(currentOccupant.userName || currentOccupant.name || 'S').charAt(0).toUpperCase()}
+                    </span>
+                    <span className="text-[#493A63] text-[10px] font-extrabold">
+                      {currentOccupant.userName || currentOccupant.name || 'Student'}
+                    </span>
+                    <span
+                      className="px-1.5 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wide flex items-center gap-0.5"
+                      style={{ backgroundColor: meta.bg, color: meta.color }}
+                    >
+                      {meta.emoji} {meta.label}
+                    </span>
                   </div>
                 </Html>
               </group>
