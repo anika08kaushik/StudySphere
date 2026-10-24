@@ -10,24 +10,26 @@ export default function WalkController({
   isSeatedInitial = false,
 }) {
   // State: 'IDLE' | 'WALKING' | 'APPROACHING_DESK' | 'TURNING' | 'SITTING' | 'STUDYING'
-  const [avatarState, setAvatarState] = useState(isSeatedInitial ? 'STUDYING' : 'IDLE')
+  const [avatarState, setAvatarState] = useState(isSeatedInitial ? 'STUDYING' : 'WALKING')
+  const avatarGroupRef = useRef()
   const positionRef = useRef(new THREE.Vector3(0, 0, 5))
   const rotationRef = useRef(0)
   const waypointIndexRef = useRef(0)
   const waypointsRef = useRef([])
+  const arrivalTimeoutRef = useRef(null)
+  const hasScheduledArrivalRef = useRef(false)
 
   useEffect(() => {
     if (!targetDesk) {
-      setAvatarState('IDLE')
       positionRef.current.set(0, 0, 5)
       return
     }
 
+    hasScheduledArrivalRef.current = false
     const deskPos = targetDesk.pos
     if (isSeatedInitial) {
       positionRef.current.set(deskPos[0], 0, deskPos[2] + 0.45)
       rotationRef.current = targetDesk.rot[1] + Math.PI
-      setAvatarState('STUDYING')
       return
     }
 
@@ -39,7 +41,11 @@ export default function WalkController({
       new THREE.Vector3(deskPos[0], 0, deskPos[2] + 0.45),
     ]
     waypointIndexRef.current = 0
-    setAvatarState('WALKING')
+    return () => {
+      if (arrivalTimeoutRef.current) {
+        clearTimeout(arrivalTimeoutRef.current)
+      }
+    }
   }, [targetDesk, isSeatedInitial])
 
   useFrame((state, delta) => {
@@ -73,28 +79,33 @@ export default function WalkController({
       const targetRot = targetDesk ? targetDesk.rot[1] + Math.PI : 0
       rotationRef.current = THREE.MathUtils.lerp(rotationRef.current, targetRot, 0.15)
 
-      if (Math.abs(rotationRef.current - targetRot) < 0.05) {
+      if (Math.abs(rotationRef.current - targetRot) < 0.05 && !hasScheduledArrivalRef.current) {
+        hasScheduledArrivalRef.current = true
         setAvatarState('SITTING')
-        setTimeout(() => {
+        arrivalTimeoutRef.current = setTimeout(() => {
           setAvatarState('STUDYING')
           if (onArrived) onArrived()
         }, 400)
       }
     }
+
+    if (avatarGroupRef.current) {
+      avatarGroupRef.current.position.copy(positionRef.current)
+      avatarGroupRef.current.rotation.y = rotationRef.current
+    }
   })
 
-  const currentPos = [positionRef.current.x, positionRef.current.y, positionRef.current.z]
   const isSeated = avatarState === 'SITTING' || avatarState === 'STUDYING'
   const isWalking = avatarState === 'WALKING'
 
   return (
-    <StudyAvatar
-      avatarConfig={avatarConfig}
-      position={currentPos}
-      rotation={[0, rotationRef.current, 0]}
-      isSeated={isSeated}
-      isWalking={isWalking}
-      isCurrentUser={true}
-    />
+    <group ref={avatarGroupRef}>
+      <StudyAvatar
+        avatarConfig={avatarConfig}
+        isSeated={isSeated}
+        isWalking={isWalking}
+        isCurrentUser={true}
+      />
+    </group>
   )
 }

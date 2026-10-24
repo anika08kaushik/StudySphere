@@ -232,6 +232,7 @@ export default function LibraryScene({
       {/* User's Walking / Seated Avatar */}
       {selectedDeskIndex !== null && (
         <WalkController
+          key={`${DESK_LAYOUT[selectedDeskIndex].id}-${isSeatedInitial ? 'restored' : 'new'}`}
           avatarConfig={userAvatarConfig}
           targetDesk={DESK_LAYOUT[selectedDeskIndex]}
           onArrived={onAvatarArrived}
