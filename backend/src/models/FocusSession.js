@@ -47,6 +47,13 @@ const focusSessionSchema = new mongoose.Schema(
       trim: true,
       default: '',
     },
+    // Client-side idempotency id (Phase 7): prevents duplicate session records
+    // when a timer completion is retried or reported twice.
+    eventId: {
+      type: String,
+      default: null,
+      index: true,
+    },
   },
   {
     timestamps: true,
@@ -54,6 +61,13 @@ const focusSessionSchema = new mongoose.Schema(
 )
 
 focusSessionSchema.index({ user: 1, createdAt: -1 })
+focusSessionSchema.index(
+  { user: 1, eventId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { eventId: { $type: 'string' } },
+  }
+)
 focusSessionSchema.index({ user: 1, startTime: -1 })
 focusSessionSchema.index({ groupId: 1, createdAt: -1 })
 

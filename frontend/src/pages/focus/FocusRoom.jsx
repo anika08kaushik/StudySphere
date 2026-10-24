@@ -47,12 +47,48 @@ export default function FocusRoom() {
   const [timerMode, setTimerMode] = useState('FOCUS')
   const [timerSecs, setTimerSecs] = useState(TIMER_MODES.FOCUS.duration)
   const [timerRunning, setTimerRunning] = useState(false)
-  const [isSharedTimer, setIsSharedTimer] = useState(false)
+  // Phase 8/7: shared toggle survives refresh so a shared room timer re-syncs on rejoin
+  const [isSharedTimer, setIsSharedTimer] = useState(() => {
+    try { return localStorage.getItem('focus_shared_timer') === 'true' } catch { return false }
+  })
+  useEffect(() => {
+    try { localStorage.setItem('focus_shared_timer', String(isSharedTimer)) } catch { /* ignore */ }
+  }, [isSharedTimer])
 
   // Session Tracking (Phase 4 & 5: Does not count paused time as focused time)
   const [activeFocusedSeconds, setActiveFocusedSeconds] = useState(0)
   const sessionStartTimeRef = useRef(null)
   const [sessionCompletedAlert, setSessionCompletedAlert] = useState('')
+
+  // Phase 7: persistent timer state
+  const timerMirrorRef = useRef({})
+  const sessionEventIdRef = useRef(null)
+  const newSessionEventId = () => `evt-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+
+  // Keep a mirror of the latest timer values so persistence helpers and the
+  // throttled interval always save fresh data without stale closures.
+  useEffect(() => {
+    timerMirrorRef.current = {
+      mode: timerMode,
+      remainingSeconds: timerSecs,
+      isRunning: timerRunning,
+      focusElapsedSeconds: activeFocusedSeconds,
+      sessionStartedAt: sessionStartTimeRef.current,
+      sessionTargetMinutes: 25,
+    }
+  })
+
+  const persistTimerState = async (override = {}) => {
+    try {
+      await focusService.saveTimerState({
+        groupId: selectedGroupId,
+        ...timerMirrorRef.current,
+        ...override,
+      })
+    } catch (err) {
+      console.warn('Failed to persist timer state:', err?.message)
+    }
+  }
 
   // Load Groups
   useEffect(() => {
@@ -140,6 +176,82 @@ export default function FocusRoom() {
     }
   }, [selectedGroupId, avatarConfig])
 
+  // Phase 7: Restore the user's personal timer for this room after refresh.
+  // Server derives elapsed time from lastRunningUpdatedAt, so a timer that ran
+  // while the tab was closed resumes with the correct remaining seconds.
+  useEffect(() => {
+    if (isSharedTimer) return // shared timers re-sync via focus:joined
+    let cancelled = false
+
+    const restore = async () => {
+      // Never clobber an already-active local session (e.g. a quick group switch)
+      const live = timerMirrorRef.current || {}
+      if (live.isRunning || (live.focusElapsedSeconds || 0) > 0) return
+
+      try {
+        const res = await focusService.getTimerState(selectedGroupId)
+        if (cancelled) return
+        const data = res.data?.data
+        if (!data) return
+
+        // Timer finished while the tab was away: record it once, then reset.
+        if (data.completedWhileAway) {
+          if (data.mode === 'FOCUS' && (data.focusElapsedSeconds || 0) > 0) {
+            try {
+              await focusService.recordSession({
+                eventId: `away-${newSessionEventId()}`,
+                groupId: selectedGroupId === 'campus_lounge' ? null : selectedGroupId,
+                startTime: data.sessionStartedAt || new Date(Date.now() - data.focusElapsedSeconds * 1000),
+                endTime: new Date(),
+                duration: data.focusElapsedSeconds,
+                status: 'COMPLETED',
+                sessionType: 'FOCUS',
+                targetMinutes: data.sessionTargetMinutes || 25,
+              })
+            } catch (err) {
+              console.error('Failed to record away-completed session:', err)
+            }
+          }
+          focusService.clearTimerState(selectedGroupId).catch(() => {})
+          return
+        }
+
+        const hasMeaningfulState =
+          data.isRunning ||
+          (data.focusElapsedSeconds || 0) > 0 ||
+          (data.remainingSeconds || 0) < (TIMER_MODES[data.mode]?.duration ?? 0)
+        if (!hasMeaningfulState) return
+
+        setTimerMode(TIMER_MODES[data.mode] ? data.mode : 'FOCUS')
+        setTimerSecs(data.remainingSeconds || TIMER_MODES.FOCUS.duration)
+        setTimerRunning(Boolean(data.isRunning))
+        setActiveFocusedSeconds(data.focusElapsedSeconds || 0)
+        sessionStartTimeRef.current = data.sessionStartedAt ? new Date(data.sessionStartedAt) : null
+        if (!sessionEventIdRef.current) {
+          sessionEventIdRef.current = newSessionEventId()
+        }
+      } catch (err) {
+        console.warn('Unable to restore timer state:', err?.message)
+      }
+    }
+
+    restore()
+    return () => {
+      cancelled = true
+    }
+  }, [selectedGroupId, isSharedTimer])
+
+  // Throttled persistence while the timer is running (every 5s). The server
+  // anchors remaining time at each save, so a refresh loses at most ~5s.
+  useEffect(() => {
+    if (!timerRunning) return
+    const id = setInterval(() => {
+      persistTimerState()
+    }, 5000)
+    return () => clearInterval(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timerRunning])
+
   // Map participants to desk indices for 3D LibraryScene
   const occupantsMap = useMemo(() => {
     const map = {}
@@ -157,6 +269,9 @@ export default function FocusRoom() {
     if (timerRunning && timerSecs > 0) {
       if (!sessionStartTimeRef.current) {
         sessionStartTimeRef.current = new Date()
+        if (!sessionEventIdRef.current) {
+          sessionEventIdRef.current = newSessionEventId()
+        }
       }
 
       interval = setInterval(() => {
@@ -188,10 +303,11 @@ export default function FocusRoom() {
 
     setSessionCompletedAlert(`🎉 Awesome work! You finished your ${TIMER_MODES[completedMode].label} session!`)
 
-    // Save session to backend
+    // Save session to backend (idempotent via eventId - no duplicate records)
     if (completedMode === 'FOCUS') {
       try {
         await focusService.recordSession({
+          eventId: sessionEventIdRef.current || newSessionEventId(),
           groupId: selectedGroupId === 'campus_lounge' ? null : selectedGroupId,
           startTime: sessionStartTimeRef.current || new Date(Date.now() - duration * 1000),
           endTime: new Date(),
@@ -203,6 +319,21 @@ export default function FocusRoom() {
       } catch (err) {
         console.error('Failed to record completed focus session:', err)
       }
+    }
+
+    // This session is finished: reset its counters so the next pomodoro round
+    // records its own duration instead of accumulating across rounds.
+    setActiveFocusedSeconds(0)
+    sessionStartTimeRef.current = null
+    sessionEventIdRef.current = null
+    // Update the mirror immediately: the persist inside switchTimerMode below
+    // runs before the next render would refresh it, and must not resurrect the
+    // just-finished session's elapsed focus time.
+    timerMirrorRef.current = {
+      ...timerMirrorRef.current,
+      isRunning: false,
+      focusElapsedSeconds: 0,
+      sessionStartedAt: null,
     }
 
     // Switch automatically to Short Break or Focus
@@ -222,6 +353,13 @@ export default function FocusRoom() {
     setTimerMode(modeKey)
     setTimerSecs(config.duration)
 
+    persistTimerState({
+      isRunning: false,
+      mode: modeKey,
+      remainingSeconds: config.duration,
+      focusElapsedSeconds: timerMirrorRef.current?.focusElapsedSeconds || 0,
+    })
+
     if (isSharedTimer) {
       sendFocusTimerAction(selectedGroupId, 'mode_change', modeKey, config.duration)
     }
@@ -234,7 +372,15 @@ export default function FocusRoom() {
     setTimerRunning(true)
     if (!sessionStartTimeRef.current) {
       sessionStartTimeRef.current = new Date()
+      sessionEventIdRef.current = newSessionEventId()
     }
+    persistTimerState({
+      isRunning: true,
+      mode: timerMode,
+      remainingSeconds: timerSecs,
+      focusElapsedSeconds: activeFocusedSeconds,
+      sessionStartedAt: sessionStartTimeRef.current,
+    })
     if (isSharedTimer) {
       sendFocusTimerAction(selectedGroupId, 'start', timerMode, timerSecs)
     }
@@ -242,6 +388,14 @@ export default function FocusRoom() {
   }
 
   const handlePauseTimer = () => {
+    // Freeze exact values at pause time - paused wall-clock is never recorded.
+    persistTimerState({
+      isRunning: false,
+      mode: timerMode,
+      remainingSeconds: timerSecs,
+      focusElapsedSeconds: activeFocusedSeconds,
+      sessionStartedAt: sessionStartTimeRef.current,
+    })
     setTimerRunning(false)
     if (isSharedTimer) {
       sendFocusTimerAction(selectedGroupId, 'pause', timerMode, timerSecs)
@@ -253,6 +407,7 @@ export default function FocusRoom() {
     setTimerRunning(false)
     const defaultSecs = TIMER_MODES[timerMode].duration
     setTimerSecs(defaultSecs)
+    focusService.clearTimerState(selectedGroupId).catch(() => {})
     if (isSharedTimer) {
       sendFocusTimerAction(selectedGroupId, 'reset', timerMode, defaultSecs)
     }
@@ -265,6 +420,7 @@ export default function FocusRoom() {
     if (timerMode === 'FOCUS' && duration >= 30) {
       try {
         await focusService.recordSession({
+          eventId: sessionEventIdRef.current || newSessionEventId(),
           groupId: selectedGroupId === 'campus_lounge' ? null : selectedGroupId,
           startTime: sessionStartTimeRef.current || new Date(Date.now() - duration * 1000),
           endTime: new Date(),
@@ -280,7 +436,9 @@ export default function FocusRoom() {
 
     setActiveFocusedSeconds(0)
     sessionStartTimeRef.current = null
+    sessionEventIdRef.current = null
     setTimerSecs(TIMER_MODES[timerMode].duration)
+    focusService.clearTimerState(selectedGroupId).catch(() => {})
   }
 
   // Desk Interactions
@@ -367,6 +525,10 @@ export default function FocusRoom() {
               value={selectedGroupId}
               onChange={(e) => {
                 leaveFocusRoom(selectedGroupId)
+                // Freeze the saved timer for this room paused, so switching
+                // rooms does not keep accruing wall-clock focused time in the
+                // background while nobody is here.
+                persistTimerState({ isRunning: false })
                 setSelectedGroupId(e.target.value)
               }}
               className="bg-transparent text-xs font-bold text-[#493A63] focus:outline-none cursor-pointer"
