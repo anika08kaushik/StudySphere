@@ -44,6 +44,8 @@ const TIMER_MODES = {
 }
 
 const FOCUS_SEAT_IDS = DESK_LAYOUT.map((desk) => desk.id)
+const getTimerCompletionStartTime = (sessionStartTime, duration) =>
+  sessionStartTime || new Date(Date.now() - duration * 1000)
 
 export default function FocusRoom() {
   const { avatarConfig, isStudying, setIsStudying } = useApp()
@@ -279,7 +281,7 @@ export default function FocusRoom() {
       selectedGroupId,
       avatarConfig,
       selectedDeskIndex,
-      selectedDeskIndex !== null || isStudying ? 'STUDYING' : 'IDLE',
+      selectedDeskIndex !== null ? 'STUDYING' : 'IDLE',
       selectedDeskIndex !== null ? DESK_LAYOUT[selectedDeskIndex]?.id : null
     )
 
@@ -290,7 +292,7 @@ export default function FocusRoom() {
       offFocusSeatConflict(handleSeatConflict)
       offFocusTimerSync(handleTimerSync)
     }
-  }, [selectedGroupId, avatarConfig, userId])
+  }, [selectedGroupId, avatarConfig, userId, selectedDeskIndex, isSharedTimer, setIsStudying])
 
   useEffect(() => {
     if (savedSeatId && !FOCUS_SEAT_IDS.includes(savedSeatId)) {
@@ -385,6 +387,8 @@ export default function FocusRoom() {
     return map
   }, [participants])
 
+  const handleTimerCompleteRef = useRef(null)
+
   // Pomodoro Countdown & Elapsed Time Tracker
   useEffect(() => {
     let interval = null
@@ -402,7 +406,7 @@ export default function FocusRoom() {
         if (timerSecs <= 1) {
           clearInterval(interval)
           setTimerSecs(0)
-          handleTimerComplete()
+          handleTimerCompleteRef.current?.()
           return
         }
         setTimerSecs((prev) => prev - 1)
@@ -416,6 +420,29 @@ export default function FocusRoom() {
 
     return () => clearInterval(interval)
   }, [timerRunning, timerSecs, timerMode])
+
+  // Timer Mode Switcher (Focus, Short Break, Long Break)
+  const switchTimerMode = (modeKey) => {
+    const config = TIMER_MODES[modeKey]
+    if (!config) return
+
+    setTimerRunning(false)
+    setTimerMode(modeKey)
+    setTimerSecs(config.duration)
+
+    persistTimerState({
+      isRunning: false,
+      mode: modeKey,
+      remainingSeconds: config.duration,
+      focusElapsedSeconds: timerMirrorRef.current?.focusElapsedSeconds || 0,
+    })
+
+    if (isSharedTimer) {
+      sendFocusTimerAction(selectedGroupId, 'mode_change', modeKey, config.duration)
+    }
+
+    updateFocusStatus(selectedGroupId, modeKey === 'FOCUS' ? 'STUDYING' : 'BREAK')
+  }
 
   // Handle Timer Complete
   const handleTimerComplete = async () => {
@@ -431,7 +458,7 @@ export default function FocusRoom() {
         await focusService.recordSession({
           eventId: sessionEventIdRef.current || newSessionEventId(),
           groupId: selectedGroupId === 'campus_lounge' ? null : selectedGroupId,
-          startTime: sessionStartTimeRef.current || new Date(Date.now() - duration * 1000),
+          startTime: getTimerCompletionStartTime(sessionStartTimeRef.current, duration),
           endTime: new Date(),
           duration: activeFocusedSeconds || duration,
           status: 'COMPLETED',
@@ -458,7 +485,6 @@ export default function FocusRoom() {
       sessionStartedAt: null,
     }
 
-    // Switch automatically to Short Break or Focus
     if (completedMode === 'FOCUS') {
       switchTimerMode('SHORT_BREAK')
     } else {
@@ -466,28 +492,9 @@ export default function FocusRoom() {
     }
   }
 
-  // Timer Mode Switcher (Focus, Short Break, Long Break)
-  const switchTimerMode = (modeKey) => {
-    const config = TIMER_MODES[modeKey]
-    if (!config) return
-
-    setTimerRunning(false)
-    setTimerMode(modeKey)
-    setTimerSecs(config.duration)
-
-    persistTimerState({
-      isRunning: false,
-      mode: modeKey,
-      remainingSeconds: config.duration,
-      focusElapsedSeconds: timerMirrorRef.current?.focusElapsedSeconds || 0,
-    })
-
-    if (isSharedTimer) {
-      sendFocusTimerAction(selectedGroupId, 'mode_change', modeKey, config.duration)
-    }
-
-    updateFocusStatus(selectedGroupId, modeKey === 'FOCUS' ? 'STUDYING' : 'BREAK')
-  }
+  useEffect(() => {
+    handleTimerCompleteRef.current = handleTimerComplete
+  })
 
   // Timer Controls
   const handleStartTimer = () => {
@@ -605,8 +612,6 @@ export default function FocusRoom() {
     const remainder = secs % 60
     return `${String(mins).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`
   }
-
-  const selectedGroupObj = groups.find((g) => String(g._id) === String(selectedGroupId))
 
   return (
     <div className="space-y-4 max-w-7xl mx-auto relative px-2 md:px-4 py-2">

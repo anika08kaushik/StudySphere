@@ -3,6 +3,14 @@ import { io } from 'socket.io-client'
 const getInitialToken = () =>
   sessionStorage.getItem('studysphere_token') || localStorage.getItem('studysphere_token')
 
+const getStoredUser = (rawUser) => {
+  try {
+    return rawUser ? JSON.parse(rawUser) : null
+  } catch {
+    return null
+  }
+}
+
 const socket = io(
   import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000',
   {
@@ -23,13 +31,7 @@ export const connectSocket = (userOverride, tokenOverride) => {
   const storedUserRaw =
     sessionStorage.getItem('studysphere_user') ||
     localStorage.getItem('studysphere_user')
-  let storedUser = null
-  try {
-    storedUser = storedUserRaw ? JSON.parse(storedUserRaw) : null
-  } catch {
-    storedUser = null
-  }
-  const user = userOverride || storedUser
+  const user = userOverride || getStoredUser(storedUserRaw)
 
   const tokenChanged = socket.auth?.token !== token
   const userChanged = String(socket.auth?.userId || '') !== String(user?._id || user?.id || '')
@@ -273,4 +275,3 @@ export const offDmNew = (handler) => {
 }
 
 export default socket
-
