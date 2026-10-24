@@ -20,6 +20,7 @@ import groupRoutes from './routes/groupRoutes.js'
 import taskRoutes from './routes/taskRoutes.js'
 import focusRoutes from './routes/focusRoutes.js'
 import privateChatRoutes from './routes/privateChatRoutes.js'
+import calendarEventRoutes from './routes/calendarEventRoutes.js'
 
 import { setNotificationIo } from './services/notificationService.js'
 import { setActivityIo } from './services/activityService.js'
@@ -37,6 +38,8 @@ app.use('/api/tasks', taskRoutes)
 app.use('/api/focus', focusRoutes)
 // Member 3 - private chat requests & direct messages from focus rooms
 app.use('/api/private-chat', privateChatRoutes)
+// Member 3 - persistent calendar events with emoji mood
+app.use('/api/calendar', calendarEventRoutes)
 // Member 4 - Resource/File APIs
 app.use('/api/files', fileRoutes)
 
