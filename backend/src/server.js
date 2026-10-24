@@ -19,9 +19,11 @@ import userRoutes from './routes/userRoutes.js'
 import groupRoutes from './routes/groupRoutes.js'
 import taskRoutes from './routes/taskRoutes.js'
 import focusRoutes from './routes/focusRoutes.js'
+import privateChatRoutes from './routes/privateChatRoutes.js'
 
 import { setNotificationIo } from './services/notificationService.js'
 import { setActivityIo } from './services/activityService.js'
+import { setPrivateChatIo } from './services/privateChatService.js'
 
 const app = express()
 const httpServer = http.createServer(app)
@@ -33,6 +35,8 @@ app.use(express.urlencoded({ extended: true, limit: '25mb' }))
 
 app.use('/api/tasks', taskRoutes)
 app.use('/api/focus', focusRoutes)
+// Member 3 - private chat requests & direct messages from focus rooms
+app.use('/api/private-chat', privateChatRoutes)
 // Member 4 - Resource/File APIs
 app.use('/api/files', fileRoutes)
 
@@ -64,6 +68,7 @@ io.use(socketAuthMiddleware)
 // Initialize notification & activity real-time socket emitters
 setNotificationIo(io)
 setActivityIo(io)
+setPrivateChatIo(io)
 
 io.on('connection', (socket) => {
   console.log(`Socket connected: ${socket.id}`)
