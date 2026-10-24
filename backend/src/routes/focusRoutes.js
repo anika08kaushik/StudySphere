@@ -4,6 +4,7 @@ import {
   recordSession,
   getSessions,
   getFocusStats,
+  getFocusReport,
   saveTimerState,
   getTimerState,
   clearTimerState,
@@ -19,5 +20,6 @@ router.get('/stats', getFocusStats)
 router.post('/timer', saveTimerState)
 router.get('/timer', getTimerState)
 router.delete('/timer', clearTimerState)
+router.get('/report', getFocusReport)
 
 export default router

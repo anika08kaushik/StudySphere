@@ -1,13 +1,71 @@
+import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { useApp } from '../context/AppContext'
+import api from '../services/api'
+import taskService from '../services/taskService'
+import focusService from '../services/focusService'
 import Avatar from '../components/ui/Avatar'
+import FocusReportPanel from '../components/focus/FocusReportPanel'
+
+const formatMinutes = (seconds) => {
+  const mins = Math.round((seconds || 0) / 60)
+  if (mins < 60) return `${mins}m`
+  const h = Math.floor(mins / 60)
+  return `${h}h ${mins % 60}m`
+}
 
 export default function Dashboard() {
   const { user } = useAuth()
   const { avatarConfig } = useApp()
 
   const userName = avatarConfig?.name || user?.name?.split(' ')[0] || 'Anika'
+
+  // Real study-life data (Phase 8): focus stats, tasks and groups
+  const [focusStats, setFocusStats] = useState(null)
+  const [tasks, setTasks] = useState([])
+  const [groupCount, setGroupCount] = useState(null)
+  const [dLoading, setDLoading] = useState(true)
+  const [dError, setDError] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+
+    const load = async () => {
+      setDLoading(true)
+      setDError('')
+      try {
+        const [statsRes, tasksRes, groupsRes] = await Promise.allSettled([
+          focusService.getFocusStats(),
+          taskService.getTasks(),
+          api.get('/groups/me'),
+        ])
+
+        if (cancelled) return
+
+        if (statsRes.status === 'fulfilled') setFocusStats(statsRes.value.data?.data || null)
+        if (tasksRes.status === 'fulfilled') setTasks(tasksRes.value.data?.data || [])
+        if (groupsRes.status === 'fulfilled') setGroupCount((groupsRes.value.data?.data || []).length)
+
+        if (statsRes.status === 'rejected' && tasksRes.status === 'rejected') {
+          setDError('Unable to load your study data right now.')
+        }
+      } finally {
+        if (!cancelled) setDLoading(false)
+      }
+    }
+
+    load()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const pendingTasks = tasks.filter((t) => t.status !== 'COMPLETED')
+  const upcomingDeadlines = pendingTasks
+    .filter((t) => t.deadline && new Date(t.deadline).getTime() >= Date.now() - 3 * 24 * 60 * 60 * 1000)
+    .sort((a, b) => new Date(a.deadline) - new Date(b.deadline))
+    .slice(0, 5)
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
@@ -118,38 +176,49 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Your Study Life Stats */}
+      {/* Your Study Life Stats (real data from focus + task APIs) */}
       <div>
         <h2 className="text-xs font-bold text-[#776B88] uppercase tracking-wider mb-3">
           YOUR STUDY LIFE
         </h2>
+        {dError && (
+          <div className="card-soft p-4 bg-rose-50 border-rose-200 text-xs font-semibold text-rose-700 mb-4">
+            ⚠ {dError}
+          </div>
+        )}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="card-soft p-5 flex items-center gap-4 bg-gradient-to-br from-white to-[#FCF9EE] border-[#F6EBD0]">
+          <div className={`card-soft p-5 flex items-center gap-4 bg-gradient-to-br from-white to-[#FCF9EE] border-[#F6EBD0] ${dLoading ? 'animate-pulse' : ''}`}>
             <div className="w-12 h-12 rounded-2xl bg-[#F6D98B]/30 flex items-center justify-center text-2xl">
               🔥
             </div>
             <div>
-              <p className="text-2xl font-extrabold text-[#493A63]">12 Days</p>
+              <p className="text-2xl font-extrabold text-[#493A63]">
+                {focusStats ? `${focusStats.currentStreak} Days` : '★ Days'}
+              </p>
               <p className="text-xs text-[#776B88] font-medium">Active Focus Streak</p>
             </div>
           </div>
 
-          <div className="card-soft p-5 flex items-center gap-4 bg-gradient-to-br from-white to-[#F3ECFE] border-[#E8E0F2]">
+          <div className={`card-soft p-5 flex items-center gap-4 bg-gradient-to-br from-white to-[#F3ECFE] border-[#E8E0F2] ${dLoading ? 'animate-pulse' : ''}`}>
             <div className="w-12 h-12 rounded-2xl bg-[#E9DFFF] flex items-center justify-center text-2xl">
               ⏱️
             </div>
             <div>
-              <p className="text-2xl font-extrabold text-[#493A63]">4h 20m</p>
+              <p className="text-2xl font-extrabold text-[#493A63]">
+                {focusStats ? formatMinutes(focusStats.todaySeconds) : '★'}
+              </p>
               <p className="text-xs text-[#776B88] font-medium">Total Focus Today</p>
             </div>
           </div>
 
-          <div className="card-soft p-5 flex items-center gap-4 bg-gradient-to-br from-white to-[#FDF5F1] border-[#F8DCD0]">
+          <div className={`card-soft p-5 flex items-center gap-4 bg-gradient-to-br from-white to-[#FDF5F1] border-[#F8DCD0] ${dLoading ? 'animate-pulse' : ''}`}>
             <div className="w-12 h-12 rounded-2xl bg-[#F4C9B4]/30 flex items-center justify-center text-2xl">
               👥
             </div>
             <div>
-              <p className="text-2xl font-extrabold text-[#493A63]">3 Groups</p>
+              <p className="text-2xl font-extrabold text-[#493A63]">
+                {groupCount !== null ? `${groupCount} Group${groupCount === 1 ? '' : 's'}` : '★ Groups'}
+              </p>
               <p className="text-xs text-[#776B88] font-medium">Study Communities</p>
             </div>
           </div>
@@ -197,42 +266,62 @@ export default function Dashboard() {
           </Link>
         </div>
 
-        {/* Campus Notice Board */}
+        {/* Real pending tasks & upcoming deadlines from the task backend */}
         <div className="card-soft p-6 bg-white border-[#E8E0F2]">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-xs font-bold uppercase tracking-wider text-[#776B88]">
-              📌 CAMPUS BOARD
+              📌 PENDING TASKS & DEADLINES
             </h3>
-            <span className="text-xs text-[#9B7EDB] font-semibold cursor-pointer">View All</span>
+            <Link to="/tasks" className="text-xs text-[#9B7EDB] font-semibold cursor-pointer hover:underline">
+              {pendingTasks.length} pending ‧ View all
+            </Link>
           </div>
 
-          <div className="space-y-3">
-            <div className="p-3 rounded-xl bg-[#FCF9EE] border border-[#F6EBD0] flex items-start gap-3">
-              <span className="text-lg shrink-0">📌</span>
-              <div>
-                <p className="text-xs font-bold text-[#493A63]">Exam preparation session tomorrow</p>
-                <p className="text-[11px] text-[#776B88] mt-0.5">Computer Science 101 • 4:00 PM in Library Room 2</p>
-              </div>
+          {dLoading ? (
+            <div className="space-y-3">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="p-3 rounded-xl bg-[#F8F5FF] border border-[#E8E0F2] animate-pulse">
+                  <div className="h-3 w-2/3 bg-[#E8E0F2] rounded" />
+                  <div className="h-2.5 w-1/3 bg-[#F3ECFE] rounded mt-2" />
+                </div>
+              ))}
             </div>
-
-            <div className="p-3 rounded-xl bg-[#F3ECFE] border border-[#E8E0F2] flex items-start gap-3">
-              <span className="text-lg shrink-0">📚</span>
-              <div>
-                <p className="text-xs font-bold text-[#493A63]">New resources uploaded</p>
-                <p className="text-[11px] text-[#776B88] mt-0.5">Algorithms cheat sheet & past exam papers added</p>
-              </div>
+          ) : pendingTasks.length === 0 ? (
+            <div className="p-6 text-center">
+              <p className="text-3xl mb-2">🎉</p>
+              <p className="text-xs font-bold text-[#493A63]">All tasks completed!</p>
+              <p className="text-xs text-[#776B88] mt-0.5">Create new tasks on your Kanban board.</p>
             </div>
-
-            <div className="p-3 rounded-xl bg-[#F2F7F3] border border-[#D9E8DC] flex items-start gap-3">
-              <span className="text-lg shrink-0">👥</span>
-              <div>
-                <p className="text-xs font-bold text-[#493A63]">Study group meeting at 7 PM</p>
-                <p className="text-[11px] text-[#776B88] mt-0.5">Algorithms & Data Structures weekly study sync</p>
-              </div>
+          ) : (
+            <div className="space-y-3">
+              {upcomingDeadlines.map((task) => (
+                <div key={task._id} className="p-3 rounded-xl bg-[#FDF5F1] border border-[#F8DCD0] flex items-start gap-3">
+                  <span className="text-lg shrink-0">
+                    {task.priority === 'HIGH' ? '🔥' : task.priority === 'MEDIUM' ? '⚡' : '🌱'}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-[#493A63] truncate">{task.title}</p>
+                    <p className="text-[11px] text-[#776B88] mt-0.5">
+                      {task.deadline
+                        ? `Due ${new Date(task.deadline).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+                        : 'No deadline'}
+                      {task.status && ` ‧ ${task.status.replace('_', ' ')}`}
+                    </p>
+                  </div>
+                </div>
+              ))}
+              {upcomingDeadlines.length < pendingTasks.length && (
+                <p className="text-[11px] font-semibold text-[#776B88] text-center">
+                  + {pendingTasks.length - upcomingDeadlines.length} more on the Kanban board
+                </p>
+              )}
             </div>
-          </div>
+          )}
         </div>
       </div>
+
+      {/* Phase 8: full focus reports (history, trends, CSV export) */}
+      <FocusReportPanel />
     </div>
   )
 }

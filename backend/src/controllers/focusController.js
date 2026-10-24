@@ -444,3 +444,128 @@ export const getFocusStats = async (request, response) => {
     })
   }
 }
+
+// GET /api/focus/report?period=daily|weekly|monthly|yearly
+//   &groupId=...&type=FOCUS|SHORT_BREAK|LONG_BREAK|ALL&from=ISO&to=ISO
+// Aggregated time buckets derived from persisted sessions for reports,
+// charts and the 365-day view. Day boundaries use the user's local timezone.
+export const getFocusReport = async (request, response) => {
+  try {
+    const userId = request.user?.userId
+    const { period = 'daily', groupId, type = 'ALL', from, to } = request.query
+
+    const now = new Date()
+    let rangeStart
+    const buckets = []
+
+    const todayStart = getStartOfDay(now)
+
+    const pushBucket = (key, label, rangeStartTime, rangeEndTime) => {
+      buckets.push({ key, label, start: new Date(rangeStartTime), end: new Date(rangeEndTime), focusSeconds: 0, breakSeconds: 0, completedCount: 0, interruptedCount: 0, totalTimeSeconds: 0 })
+    }
+
+    if (period === 'weekly') {
+      // Last 8 weeks, bucketed per week (local weeks start on Monday? Use Sunday-start weeks to match calendar: Sunday-start)
+      const firstWeekStart = new Date(todayStart.getTime() - 7 * 7 * 86400000)
+      rangeStart = firstWeekStart
+      for (let i = 0; i < 8; i++) {
+        const start = new Date(firstWeekStart.getTime() + i * 7 * 86400000)
+        const end = new Date(start.getTime() + 7 * 86400000)
+        pushBucket(localDateKey(start), `Week of ${localDateKey(start)}`, start.getTime(), end.getTime())
+      }
+    } else if (period === 'monthly') {
+      // Last 6 calendar months
+      rangeStart = new Date(now.getFullYear(), now.getMonth() - 5, 1)
+      for (let i = 5; i >= 0; i--) {
+        const start = new Date(now.getFullYear(), now.getMonth() - i, 1)
+        const end = new Date(now.getFullYear(), now.getMonth() - i + 1, 1)
+        pushBucket(localDateKey(start), start.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }), start.getTime(), end.getTime())
+      }
+    } else if (period === 'yearly') {
+      // Every day of the current year (365 or 366 buckets) for the 365-day view
+      const yearStart = new Date(now.getFullYear(), 0, 1)
+      const yearEnd = new Date(now.getFullYear() + 1, 0, 1)
+      rangeStart = from ? new Date(from) : yearStart
+      for (let d = new Date(now.getFullYear(), 0, 1); d < yearEnd; d = new Date(d.getTime() + 86400000)) {
+        const dayStart = getStartOfDay(d)
+        const dayEnd = new Date(dayStart.getTime() + 86400000)
+        // Handle DST by recomputing midnight rather than adding seconds blindly
+        pushBucket(localDateKey(d), localDateKey(d), dayStart.getTime(), dayEnd.getTime())
+      }
+    } else {
+      // daily: last 14 days
+      rangeStart = new Date(todayStart.getTime() - 13 * 86400000)
+      for (let i = 13; i >= 0; i--) {
+        const d = new Date(todayStart.getTime() - i * 86400000)
+        const dayStart = getStartOfDay(d)
+        const dayEnd = new Date(dayStart.getTime() + 86400000)
+        pushBucket(localDateKey(d), d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), dayStart.getTime(), dayEnd.getTime())
+      }
+    }
+
+    const effectiveStart = from && new Date(from).getTime() > rangeStart.getTime() ? new Date(from) : rangeStart
+    const effectiveEnd = to ? new Date(to) : now
+
+    const filter = {
+      user: userId,
+      startTime: { $gte: effectiveStart, $lte: effectiveEnd },
+    }
+    if (groupId && isValidObjectId(groupId)) filter.groupId = groupId
+    if (type && type !== 'ALL') filter.sessionType = type
+
+    const sessions = await FocusSession.find(filter).sort({ startTime: 1 }).populate('groupId', 'name').lean()
+
+    sessions.forEach((session) => {
+      // Find which bucket of this period contains the session's start time
+      let target = null
+      for (const b of buckets) {
+        const st = new Date(session.startTime).getTime()
+        if (st >= new Date(b.start).getTime() && st < new Date(b.end).getTime()) {
+          target = b
+          break
+        }
+      }
+      if (!target) return
+      const duration = session.duration || 0
+      const isFocus = session.sessionType === 'FOCUS'
+      if (isFocus) target.focusSeconds += duration
+      else target.breakSeconds += duration
+      target.totalTimeSeconds += duration
+      if (session.status === 'COMPLETED') target.completedCount++
+      else if (session.status === 'INTERRUPTED') target.interruptedCount++
+    })
+
+    const totals = buckets.reduce(
+      (acc, b) => {
+        acc.focusSeconds += b.focusSeconds
+        acc.breakSeconds += b.breakSeconds
+        acc.totalTimeSeconds += b.totalTimeSeconds
+        acc.completedCount += b.completedCount
+        acc.interruptedCount += b.interruptedCount
+        return acc
+      },
+      { focusSeconds: 0, breakSeconds: 0, totalTimeSeconds: 0, completedCount: 0, interruptedCount: 0 }
+    )
+    const finishedCount = totals.completedCount + totals.interruptedCount
+    totals.completionRate = finishedCount > 0 ? Math.round((totals.completedCount / finishedCount) * 100) : 0
+
+    return response.status(200).json({
+      success: true,
+      data: {
+        period,
+        type,
+        groupId: groupId || null,
+        rangeStart: effectiveStart,
+        rangeEnd: effectiveEnd,
+        buckets,
+        totals,
+      },
+    })
+  } catch (error) {
+    console.error('Get focus report error:', error)
+    return response.status(500).json({
+      success: false,
+      message: 'Unable to build focus report',
+    })
+  }
+}
