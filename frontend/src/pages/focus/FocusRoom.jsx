@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import LazyCanvas from '../../components/three/shared/LazyCanvas'
 import LibraryScene from '../../components/three/library/LibraryScene'
 import AvatarPicker from '../../components/three/avatars/AvatarPicker'
+import ExplorePeoplePanel from '../../components/focus/ExplorePeoplePanel'
 import { useApp } from '../../context/AppContext'
 import api from '../../services/api'
 import focusService from '../../services/focusService'
@@ -19,6 +20,10 @@ import socket, {
   offFocusTimerSync,
   onFocusJoined,
   offFocusJoined,
+  onChatRequestNew,
+  offChatRequestNew,
+  onChatRequestUpdate,
+  offChatRequestUpdate,
 } from '../../services/socket'
 
 const TIMER_MODES = {
@@ -42,6 +47,10 @@ export default function FocusRoom() {
   // Real-time Participants & Occupants
   const [participants, setParticipants] = useState([])
   const [showParticipantsDrawer, setShowParticipantsDrawer] = useState(false)
+
+  // Phase 9: Explore People & private chat
+  const [showExplorePanel, setShowExplorePanel] = useState(false)
+  const [pendingExploreCount, setPendingExploreCount] = useState(0)
 
   // Pomodoro Timer State
   const [timerMode, setTimerMode] = useState('FOCUS')
@@ -89,6 +98,27 @@ export default function FocusRoom() {
       console.warn('Failed to persist timer state:', err?.message)
     }
   }
+
+  // Phase 9: live chat-request badge + accepted/declined toast
+  useEffect(() => {
+    const handleRequestNew = () => {
+      setPendingExploreCount((count) => count + 1)
+    }
+    const handleRequestUpdate = (data) => {
+      setPendingExploreCount(0)
+      if (data?.status === 'ACCEPTED') {
+        setSessionCompletedAlert('🤝 Connection accepted - you can now chat privately!')
+      } else if (data?.status === 'DECLINED') {
+        setSessionCompletedAlert('Your chat request was declined.')
+      }
+    }
+    onChatRequestNew(handleRequestNew)
+    onChatRequestUpdate(handleRequestUpdate)
+    return () => {
+      offChatRequestNew(handleRequestNew)
+      offChatRequestUpdate(handleRequestUpdate)
+    }
+  }, [])
 
   // Load Groups
   useEffect(() => {
@@ -551,6 +581,23 @@ export default function FocusRoom() {
             <span>{participants.length} in room</span>
           </button>
 
+          {/* Explore People & Private Chat (Phase 9) */}
+          <button
+            onClick={() => {
+              setShowExplorePanel(!showExplorePanel)
+              setPendingExploreCount(0)
+            }}
+            className="relative flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#F8F5FF] hover:bg-[#F3ECFE] border border-[#E8E0F2] text-xs font-bold text-[#493A63] cursor-pointer transition-colors"
+          >
+            <span>🧭</span>
+            <span>Explore</span>
+            {pendingExploreCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-black flex items-center justify-center animate-pulse">
+                {pendingExploreCount}
+              </span>
+            )}
+          </button>
+
           {/* Avatar Settings */}
           <button
             onClick={() => setShowAvatarPicker(true)}
@@ -711,6 +758,15 @@ export default function FocusRoom() {
             />
           </label>
         </div>
+
+        {/* Phase 9: Explore People Panel */}
+        {showExplorePanel && (
+          <ExplorePeoplePanel
+            participants={participants}
+            selectedGroupId={selectedGroupId}
+            onClose={() => setShowExplorePanel(false)}
+          />
+        )}
 
         {/* Real-time Room Participants Drawer (Phase 3) */}
         {showParticipantsDrawer && (

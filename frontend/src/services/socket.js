@@ -231,6 +231,31 @@ export const offNewNotification = (handler) => {
   socket.off('notification:broadcast', handler)
 }
 
+// Phase 9: Private Chat Request & DM Sockets
+export const onChatRequestNew = (handler) => {
+  socket.on('chat_request:new', handler)
+}
+
+export const offChatRequestNew = (handler) => {
+  socket.off('chat_request:new', handler)
+}
+
+export const onChatRequestUpdate = (handler) => {
+  socket.on('chat_request:update', handler)
+}
+
+export const offChatRequestUpdate = (handler) => {
+  socket.off('chat_request:update', handler)
+}
+
+export const onDmNew = (handler) => {
+  socket.on('dm:new', handler)
+}
+
+export const offDmNew = (handler) => {
+  socket.off('dm:new', handler)
+}
+
 export default socket
 
 
