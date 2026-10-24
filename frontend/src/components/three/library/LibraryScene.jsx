@@ -13,17 +13,8 @@ import WalkController from '../avatars/WalkController'
 import CameraController from '../world/CameraController'
 import Decorations from './Decorations'
 import EnvironmentLighting from './EnvironmentLighting'
+import { DESK_LAYOUT } from './deskLayout'
 import { ROOM } from './materials'
-
-// Phase 11: slightly wider desk spacing so avatars never overlap and stay clearly visible
-const DESK_LAYOUT = [
-  { id: 'desk-01', pos: [-3.6, 0, -1.2], rot: [0, 0, 0], chairRot: [0, Math.PI, 0] },
-  { id: 'desk-02', pos: [3.6, 0, -1.2], rot: [0, 0, 0], chairRot: [0, Math.PI, 0] },
-  { id: 'desk-03', pos: [-3.6, 0, 3.2], rot: [0, Math.PI, 0], chairRot: [0, 0, 0] },
-  { id: 'desk-04', pos: [3.6, 0, 3.2], rot: [0, Math.PI, 0], chairRot: [0, 0, 0] },
-  { id: 'desk-05', pos: [0, 0, 1], rot: [0, Math.PI / 2, 0], chairRot: [0, Math.PI / 2, 0] },
-  { id: 'desk-06', pos: [0, 0, 4.7], rot: [0, -Math.PI / 2, 0], chairRot: [0, -Math.PI / 2, 0] },
-]
 
 // Phase 11: status -> cute display metadata for the room presence labels
 const STATUS_META = {
@@ -59,6 +50,7 @@ export default function LibraryScene({
   onAvatarArrived,
   cameraMode = 'EXPLORE',
   occupants = {},
+  isSeatedInitial = false,
 }) {
   const [hoveredDesk, setHoveredDesk] = useState(null)
 
@@ -175,7 +167,9 @@ export default function LibraryScene({
                   }}
                   onClick={(e) => {
                     e.stopPropagation()
-                    if (onSelectDesk) onSelectDesk(i)
+                    if ((typeof e.delta !== 'number' || e.delta <= 5) && onSelectDesk) {
+                      onSelectDesk(i)
+                    }
                   }}
                 >
                   <boxGeometry args={[1.4, 1.1, 0.8]} />
@@ -241,6 +235,7 @@ export default function LibraryScene({
           avatarConfig={userAvatarConfig}
           targetDesk={DESK_LAYOUT[selectedDeskIndex]}
           onArrived={onAvatarArrived}
+          isSeatedInitial={isSeatedInitial}
         />
       )}
 
@@ -253,4 +248,3 @@ export default function LibraryScene({
     </>
   )
 }
-

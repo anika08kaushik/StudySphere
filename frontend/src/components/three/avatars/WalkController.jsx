@@ -24,6 +24,13 @@ export default function WalkController({
     }
 
     const deskPos = targetDesk.pos
+    if (isSeatedInitial) {
+      positionRef.current.set(deskPos[0], 0, deskPos[2] + 0.45)
+      rotationRef.current = targetDesk.rot[1] + Math.PI
+      setAvatarState('STUDYING')
+      return
+    }
+
     // Calculate path waypoints: Start -> Walk down aisle -> Walk to desk front -> Sit in chair
     waypointsRef.current = [
       new THREE.Vector3(0, 0, 5),
@@ -33,7 +40,7 @@ export default function WalkController({
     ]
     waypointIndexRef.current = 0
     setAvatarState('WALKING')
-  }, [targetDesk])
+  }, [targetDesk, isSeatedInitial])
 
   useFrame((state, delta) => {
     if (avatarState === 'WALKING') {

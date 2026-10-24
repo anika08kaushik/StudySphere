@@ -2,12 +2,19 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import LazyCanvas from '../../components/three/shared/LazyCanvas'
 import LibraryScene from '../../components/three/library/LibraryScene'
+import { DESK_LAYOUT } from '../../components/three/library/deskLayout'
 import AvatarPicker from '../../components/three/avatars/AvatarPicker'
 import ExplorePeoplePanel from '../../components/focus/ExplorePeoplePanel'
 import YearHeatmap from '../../components/focus/YearHeatmap'
 import { useApp } from '../../context/AppContext'
+import { useAuth } from '../../hooks/useAuth'
 import api from '../../services/api'
 import focusService from '../../services/focusService'
+import {
+  clearSavedFocusSeat,
+  saveFocusSeat,
+  useSavedFocusSeat,
+} from '../../services/focusSeatStorage'
 import socket, {
   connectSocket,
   joinFocusRoom,
@@ -22,6 +29,8 @@ import socket, {
   offFocusTimerSync,
   onFocusJoined,
   offFocusJoined,
+  onFocusSeatConflict,
+  offFocusSeatConflict,
   onChatRequestNew,
   offChatRequestNew,
   onChatRequestUpdate,
@@ -34,17 +43,29 @@ const TIMER_MODES = {
   LONG_BREAK: { label: '🌴 Long Break', duration: 15 * 60, targetMinutes: 15, type: 'LONG_BREAK' },
 }
 
+const FOCUS_SEAT_IDS = DESK_LAYOUT.map((desk) => desk.id)
+
 export default function FocusRoom() {
   const { avatarConfig, isStudying, setIsStudying } = useApp()
+  const { user } = useAuth()
+  const userId = user?._id || user?.id
 
   // Groups and Room Selection
   const [groups, setGroups] = useState([])
   const [selectedGroupId, setSelectedGroupId] = useState('campus_lounge')
+  const savedSeatId = useSavedFocusSeat(userId, selectedGroupId)
+  const savedDeskIndex = DESK_LAYOUT.findIndex((desk) => desk.id === savedSeatId)
 
   // Desk and 3D State
-  const [selectedDeskIndex, setSelectedDeskIndex] = useState(null)
+  const [hasLeftDesk, setHasLeftDesk] = useState(false)
+  const selectedDeskIndex = hasLeftDesk || savedDeskIndex < 0 ? null : savedDeskIndex
+  const pendingSeatIdRef = useRef(null)
+  const [isRestoringSeat, setIsRestoringSeat] = useState(true)
   const [showAvatarPicker, setShowAvatarPicker] = useState(false)
   const [cameraMode, setCameraMode] = useState('EXPLORE')
+  const [hasChosenCameraMode, setHasChosenCameraMode] = useState(false)
+  const activeCameraMode =
+    !hasChosenCameraMode && selectedDeskIndex !== null ? 'STUDY_VIEW' : cameraMode
 
   // Real-time Participants & Occupants
   const [participants, setParticipants] = useState([])
@@ -145,7 +166,14 @@ export default function FocusRoom() {
 
         setGroups(loaded)
         if (loaded.length > 0) {
-          setSelectedGroupId(String(loaded[0]._id))
+          const roomId = String(loaded[0]._id)
+          pendingSeatIdRef.current = null
+          setSelectedGroupId(roomId)
+          setHasLeftDesk(false)
+          setIsRestoringSeat(true)
+          setIsStudying(false)
+          setCameraMode('EXPLORE')
+          setHasChosenCameraMode(false)
         }
       } catch (err) {
         console.warn('Unable to load groups for focus room:', err.message)
@@ -153,7 +181,7 @@ export default function FocusRoom() {
     }
 
     loadGroups()
-  }, [])
+  }, [setIsStudying, userId])
 
   // Connect Socket & Join Focus Room
   useEffect(() => {
@@ -168,6 +196,37 @@ export default function FocusRoom() {
     const handleJoined = (data) => {
       if (String(data.groupId) === String(selectedGroupId)) {
         setParticipants(data.participants || [])
+        const ownParticipant = (data.participants || []).find(
+          (participant) => participant.socketId === socket.id
+        )
+        const ownDeskIndex = typeof ownParticipant?.deskIndex === 'number'
+          ? ownParticipant.deskIndex
+          : DESK_LAYOUT.findIndex((desk) => desk.id === ownParticipant?.seatId)
+        const hasSeat = ownDeskIndex >= 0
+        if (hasSeat) {
+          const assignedSeatId = FOCUS_SEAT_IDS[ownDeskIndex]
+          saveFocusSeat(userId, selectedGroupId, assignedSeatId)
+          if (pendingSeatIdRef.current && pendingSeatIdRef.current !== assignedSeatId) {
+            const pendingDeskIndex = FOCUS_SEAT_IDS.indexOf(pendingSeatIdRef.current)
+            if (pendingDeskIndex >= 0) {
+              selectFocusDesk(selectedGroupId, pendingDeskIndex, avatarConfig, pendingSeatIdRef.current)
+            }
+          } else {
+            pendingSeatIdRef.current = assignedSeatId
+          }
+        } else if (pendingSeatIdRef.current) {
+          const pendingDeskIndex = FOCUS_SEAT_IDS.indexOf(pendingSeatIdRef.current)
+          if (pendingDeskIndex >= 0) {
+            selectFocusDesk(selectedGroupId, pendingDeskIndex, avatarConfig, pendingSeatIdRef.current)
+          }
+        }
+        setIsRestoringSeat(hasSeat || selectedDeskIndex === null)
+        setIsStudying(hasSeat)
+        setHasLeftDesk(false)
+        if (hasSeat) {
+          setCameraMode('STUDY_VIEW')
+          setHasChosenCameraMode(false)
+        }
         if (data.timerState && isSharedTimer) {
           setTimerSecs(data.timerState.remainingSeconds)
           setTimerRunning(data.timerState.isRunning)
@@ -176,6 +235,25 @@ export default function FocusRoom() {
           }
         }
       }
+    }
+
+    const handleSeatConflict = (data) => {
+      if (String(data.groupId) !== String(selectedGroupId)) return
+      if (FOCUS_SEAT_IDS.includes(data.currentSeatId)) {
+        pendingSeatIdRef.current = data.currentSeatId
+        saveFocusSeat(userId, selectedGroupId, data.currentSeatId)
+        setHasLeftDesk(false)
+        setSessionCompletedAlert(data.message || 'That seat is unavailable. Choose another seat.')
+        return
+      }
+      pendingSeatIdRef.current = null
+      clearSavedFocusSeat(userId, selectedGroupId)
+      setHasLeftDesk(false)
+      setIsRestoringSeat(false)
+      setIsStudying(false)
+      setCameraMode('EXPLORE')
+      setHasChosenCameraMode(false)
+      setSessionCompletedAlert(data.message || 'That seat is unavailable. Choose another seat.')
     }
 
     const handleTimerSync = (data) => {
@@ -193,6 +271,7 @@ export default function FocusRoom() {
 
     onFocusPresenceUpdate(handlePresence)
     onFocusJoined(handleJoined)
+    onFocusSeatConflict(handleSeatConflict)
     onFocusTimerSync(handleTimerSync)
 
     // Join room
@@ -200,16 +279,24 @@ export default function FocusRoom() {
       selectedGroupId,
       avatarConfig,
       selectedDeskIndex,
-      isStudying ? 'STUDYING' : 'IDLE'
+      selectedDeskIndex !== null || isStudying ? 'STUDYING' : 'IDLE',
+      selectedDeskIndex !== null ? DESK_LAYOUT[selectedDeskIndex]?.id : null
     )
 
     return () => {
       leaveFocusRoom(selectedGroupId)
       offFocusPresenceUpdate(handlePresence)
       offFocusJoined(handleJoined)
+      offFocusSeatConflict(handleSeatConflict)
       offFocusTimerSync(handleTimerSync)
     }
-  }, [selectedGroupId, avatarConfig])
+  }, [selectedGroupId, avatarConfig, userId])
+
+  useEffect(() => {
+    if (savedSeatId && !FOCUS_SEAT_IDS.includes(savedSeatId)) {
+      clearSavedFocusSeat(userId, selectedGroupId)
+    }
+  }, [savedSeatId, selectedGroupId, userId])
 
   // Phase 7: Restore the user's personal timer for this room after refresh.
   // Server derives elapsed time from lastRunningUpdatedAt, so a timer that ran
@@ -478,15 +565,22 @@ export default function FocusRoom() {
 
   // Desk Interactions
   const handleSelectDesk = (index) => {
-    setSelectedDeskIndex(index)
+    const desk = DESK_LAYOUT[index]
+    if (!desk) return
+    saveFocusSeat(userId, selectedGroupId, desk.id)
+    pendingSeatIdRef.current = desk.id
+    setHasLeftDesk(false)
+    setIsRestoringSeat(false)
     setCameraMode('DESK_VIEW')
-    selectFocusDesk(selectedGroupId, index, avatarConfig)
+    setHasChosenCameraMode(true)
+    selectFocusDesk(selectedGroupId, index, avatarConfig, desk.id)
   }
 
   const handleAvatarArrived = () => {
     setIsStudying(true)
     handleStartTimer()
     setCameraMode('STUDY_VIEW')
+    setHasChosenCameraMode(true)
     updateFocusStatus(selectedGroupId, 'STUDYING')
   }
 
@@ -494,11 +588,14 @@ export default function FocusRoom() {
     if (timerRunning && activeFocusedSeconds >= 30) {
       handleStopAndSave()
     }
-    setSelectedDeskIndex(null)
+    setHasLeftDesk(true)
+    pendingSeatIdRef.current = null
+    setIsRestoringSeat(false)
     setIsStudying(false)
     setTimerRunning(false)
     setTimerSecs(TIMER_MODES.FOCUS.duration)
     setCameraMode('EXPLORE')
+    setHasChosenCameraMode(false)
     leaveFocusDesk(selectedGroupId)
     updateFocusStatus(selectedGroupId, 'IDLE')
   }
@@ -544,7 +641,7 @@ export default function FocusRoom() {
             <p className="text-xs text-[#776B88]">
               {selectedDeskIndex === null
                 ? 'Select any available desk to sit down and begin studying'
-                : isStudying
+                : isStudying || isRestoringSeat
                   ? `Focused at Desk 0${selectedDeskIndex + 1}`
                   : `Walking to Desk 0${selectedDeskIndex + 1}...`}
             </p>
@@ -559,12 +656,19 @@ export default function FocusRoom() {
             <select
               value={selectedGroupId}
               onChange={(e) => {
+                const nextGroupId = e.target.value
                 leaveFocusRoom(selectedGroupId)
                 // Freeze the saved timer for this room paused, so switching
                 // rooms does not keep accruing wall-clock focused time in the
                 // background while nobody is here.
                 persistTimerState({ isRunning: false })
-                setSelectedGroupId(e.target.value)
+                pendingSeatIdRef.current = null
+                setSelectedGroupId(nextGroupId)
+                setHasLeftDesk(false)
+                setIsRestoringSeat(true)
+                setIsStudying(false)
+                setCameraMode('EXPLORE')
+                setHasChosenCameraMode(false)
               }}
               className="bg-transparent text-xs font-bold text-[#493A63] focus:outline-none cursor-pointer"
             >
@@ -646,6 +750,9 @@ export default function FocusRoom() {
             </button>
           )}
         </div>
+        <div className="absolute bottom-4 left-4 z-20 rounded-xl bg-white/90 px-3 py-1.5 text-[10px] font-semibold text-[#776B88] shadow-sm pointer-events-none">
+          Drag to rotate · scroll or pinch to zoom
+        </div>
       </div>
 
       {/* 3D Library Canvas Container */}
@@ -653,9 +760,12 @@ export default function FocusRoom() {
         {/* Floating Camera Toolbar */}
         <div className="absolute top-4 left-4 z-20 flex items-center gap-1.5 p-1.5 rounded-2xl bg-white/95 backdrop-blur-md border border-[#E8E0F2] shadow-sm">
           <button
-            onClick={() => setCameraMode('OVERVIEW')}
+            onClick={() => {
+              setCameraMode('OVERVIEW')
+              setHasChosenCameraMode(true)
+            }}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              cameraMode === 'OVERVIEW'
+              activeCameraMode === 'OVERVIEW'
                 ? 'bg-[#E9DFFF] text-[#493A63] shadow-xs'
                 : 'text-[#776B88] hover:text-[#493A63]'
             }`}
@@ -663,9 +773,12 @@ export default function FocusRoom() {
             🏢 Overview
           </button>
           <button
-            onClick={() => setCameraMode('EXPLORE')}
+            onClick={() => {
+              setCameraMode('EXPLORE')
+              setHasChosenCameraMode(true)
+            }}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              cameraMode === 'EXPLORE'
+              activeCameraMode === 'EXPLORE'
                 ? 'bg-[#E9DFFF] text-[#493A63] shadow-xs'
                 : 'text-[#776B88] hover:text-[#493A63]'
             }`}
@@ -675,9 +788,12 @@ export default function FocusRoom() {
           {selectedDeskIndex !== null && (
             <>
               <button
-                onClick={() => setCameraMode('DESK_VIEW')}
+                onClick={() => {
+                  setCameraMode('DESK_VIEW')
+                  setHasChosenCameraMode(true)
+                }}
                 className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  cameraMode === 'DESK_VIEW'
+                  activeCameraMode === 'DESK_VIEW'
                     ? 'bg-[#E9DFFF] text-[#493A63] shadow-xs'
                     : 'text-[#776B88] hover:text-[#493A63]'
                 }`}
@@ -685,9 +801,12 @@ export default function FocusRoom() {
                 🪑 Desk
               </button>
               <button
-                onClick={() => setCameraMode('STUDY_VIEW')}
+                onClick={() => {
+                  setCameraMode('STUDY_VIEW')
+                  setHasChosenCameraMode(true)
+                }}
                 className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  cameraMode === 'STUDY_VIEW'
+                  activeCameraMode === 'STUDY_VIEW'
                     ? 'bg-[#E9DFFF] text-[#493A63] shadow-xs'
                     : 'text-[#776B88] hover:text-[#493A63]'
                 }`}
@@ -866,8 +985,9 @@ export default function FocusRoom() {
             selectedDeskIndex={selectedDeskIndex}
             onSelectDesk={handleSelectDesk}
             onAvatarArrived={handleAvatarArrived}
-            cameraMode={cameraMode}
+            cameraMode={activeCameraMode}
             occupants={occupantsMap}
+            isSeatedInitial={isRestoringSeat}
           />
         </LazyCanvas>
       </div>

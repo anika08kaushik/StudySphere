@@ -1,6 +1,7 @@
 import mongoose from 'mongoose'
 import StudyGroup from '../models/StudyGroup.js'
 import Membership from '../models/Membership.js'
+import { findFocusSeatConflict, resolveFocusSeat } from '../services/focusSeatService.js'
 
 // In-memory presence and timer state per group focus room
 // focusRooms: Map<groupId, Map<socketId, participant>>
@@ -54,7 +55,7 @@ export const registerFocusSocket = (io, socket) => {
   // 1. Join Focus Room
   socket.on('focus:join', async (payload = {}) => {
     try {
-      const { groupId, avatarConfig, deskIndex = null, status = 'IDLE' } = payload
+      const { groupId, avatarConfig, deskIndex = null, seatId = null, status = 'IDLE' } = payload
       if (!groupId) return
 
       const stringGroupId = String(groupId)
@@ -88,12 +89,19 @@ export const registerFocusSocket = (io, socket) => {
       }
 
       const room = focusRooms.get(stringGroupId)
+      const requestedSeat = resolveFocusSeat(seatId, deskIndex)
+      const seatConflict = requestedSeat
+        ? findFocusSeatConflict(room, socket.id, requestedSeat.seatId)
+        : null
+      const hasSeatRequest = seatId !== null || deskIndex !== null
+      const seatUnavailable = hasSeatRequest && (!requestedSeat || seatConflict)
       const participant = {
         socketId: socket.id,
         userId: sender.userId,
         userName: sender.userName,
         profilePhoto: sender.profilePhoto,
-        deskIndex: typeof deskIndex === 'number' ? deskIndex : null,
+        seatId: seatUnavailable ? null : requestedSeat?.seatId || null,
+        deskIndex: seatUnavailable ? null : requestedSeat?.deskIndex ?? null,
         avatarConfig: avatarConfig || null,
         status: status || 'IDLE',
         joinedAt: Date.now(),
@@ -110,6 +118,19 @@ export const registerFocusSocket = (io, socket) => {
         timerState,
       })
 
+      if (seatUnavailable) {
+        socket.emit('focus:seat_conflict', {
+          groupId: stringGroupId,
+          seatId: requestedSeat?.seatId || seatId,
+          reason: seatConflict ? 'occupied' : 'invalid',
+          currentSeatId: participant.seatId,
+          currentDeskIndex: participant.deskIndex,
+          message: seatConflict
+            ? 'That seat is already occupied. Choose another seat.'
+            : 'That seat is no longer available. Choose another seat.',
+        })
+      }
+
       // Broadcast presence update to everyone in this focus room
       io.to(roomKey).emit('focus:presence_update', {
         groupId: stringGroupId,
@@ -123,7 +144,8 @@ export const registerFocusSocket = (io, socket) => {
   })
 
   // 2. Select / Sit at Desk
-  socket.on('focus:select_desk', ({ groupId, deskIndex, avatarConfig }) => {
+  socket.on('focus:select_desk', ({ groupId, deskIndex, seatId, avatarConfig } = {}) => {
+    if (!groupId) return
     const stringGroupId = String(groupId)
     if (!focusRooms.has(stringGroupId)) return
 
@@ -131,7 +153,26 @@ export const registerFocusSocket = (io, socket) => {
     const participant = room.get(socket.id)
     if (!participant) return
 
-    participant.deskIndex = typeof deskIndex === 'number' ? deskIndex : null
+    const requestedSeat = resolveFocusSeat(seatId, deskIndex)
+    const seatConflict = requestedSeat
+      ? findFocusSeatConflict(room, socket.id, requestedSeat.seatId)
+      : null
+    if (!requestedSeat || seatConflict) {
+      socket.emit('focus:seat_conflict', {
+        groupId: stringGroupId,
+        seatId: requestedSeat?.seatId || seatId,
+        reason: seatConflict ? 'occupied' : 'invalid',
+        currentSeatId: participant.seatId,
+        currentDeskIndex: participant.deskIndex,
+        message: seatConflict
+          ? 'That seat is already occupied. Choose another seat.'
+          : 'That seat is no longer available. Choose another seat.',
+      })
+      return
+    }
+
+    participant.seatId = requestedSeat.seatId
+    participant.deskIndex = requestedSeat.deskIndex
     if (avatarConfig) participant.avatarConfig = avatarConfig
     participant.status = 'STUDYING'
 
@@ -152,6 +193,7 @@ export const registerFocusSocket = (io, socket) => {
     const participant = room.get(socket.id)
     if (!participant) return
 
+    participant.seatId = null
     participant.deskIndex = null
     participant.status = 'IDLE'
 

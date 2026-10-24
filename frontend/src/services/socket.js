@@ -148,13 +148,20 @@ export const sendNoteVersion = (noteId, action, version, content) => {
 }
 
 // Focus Room Real-Time Sockets
-export const joinFocusRoom = (groupId, avatarConfig = null, deskIndex = null, status = 'IDLE') => {
+export const joinFocusRoom = (
+  groupId,
+  avatarConfig = null,
+  deskIndex = null,
+  status = 'IDLE',
+  seatId = null
+) => {
   if (!groupId) return
   if (socket.connected) {
     socket.emit('focus:join', {
       groupId: String(groupId),
       avatarConfig,
       deskIndex,
+      seatId,
       status,
     })
   }
@@ -167,11 +174,12 @@ export const leaveFocusRoom = (groupId) => {
   }
 }
 
-export const selectFocusDesk = (groupId, deskIndex, avatarConfig) => {
+export const selectFocusDesk = (groupId, deskIndex, avatarConfig, seatId = null) => {
   if (!groupId) return
   socket.emit('focus:select_desk', {
     groupId: String(groupId),
     deskIndex,
+    seatId,
     avatarConfig,
   })
 }
@@ -220,6 +228,14 @@ export const offFocusJoined = (handler) => {
   socket.off('focus:joined', handler)
 }
 
+export const onFocusSeatConflict = (handler) => {
+  socket.on('focus:seat_conflict', handler)
+}
+
+export const offFocusSeatConflict = (handler) => {
+  socket.off('focus:seat_conflict', handler)
+}
+
 // Notifications Real-Time Socket Emitters
 export const onNewNotification = (handler) => {
   socket.on('notification:new', handler)
@@ -257,5 +273,4 @@ export const offDmNew = (handler) => {
 }
 
 export default socket
-
 
