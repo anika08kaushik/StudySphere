@@ -147,6 +147,79 @@ export const sendNoteVersion = (noteId, action, version, content) => {
   })
 }
 
+// Focus Room Real-Time Sockets
+export const joinFocusRoom = (groupId, avatarConfig = null, deskIndex = null, status = 'IDLE') => {
+  if (!groupId) return
+  if (socket.connected) {
+    socket.emit('focus:join', {
+      groupId: String(groupId),
+      avatarConfig,
+      deskIndex,
+      status,
+    })
+  }
+}
+
+export const leaveFocusRoom = (groupId) => {
+  if (!groupId) return
+  if (socket.connected) {
+    socket.emit('focus:leave', { groupId: String(groupId) })
+  }
+}
+
+export const selectFocusDesk = (groupId, deskIndex, avatarConfig) => {
+  if (!groupId) return
+  socket.emit('focus:select_desk', {
+    groupId: String(groupId),
+    deskIndex,
+    avatarConfig,
+  })
+}
+
+export const leaveFocusDesk = (groupId) => {
+  if (!groupId) return
+  socket.emit('focus:leave_desk', { groupId: String(groupId) })
+}
+
+export const sendFocusTimerAction = (groupId, action, mode = 'FOCUS', remainingSeconds = null) => {
+  if (!groupId) return
+  socket.emit('focus:timer_action', {
+    groupId: String(groupId),
+    action,
+    mode,
+    remainingSeconds,
+  })
+}
+
+export const updateFocusStatus = (groupId, status) => {
+  if (!groupId) return
+  socket.emit('focus:status_change', { groupId: String(groupId), status })
+}
+
+export const onFocusPresenceUpdate = (handler) => {
+  socket.on('focus:presence_update', handler)
+}
+
+export const offFocusPresenceUpdate = (handler) => {
+  socket.off('focus:presence_update', handler)
+}
+
+export const onFocusTimerSync = (handler) => {
+  socket.on('focus:timer_sync', handler)
+}
+
+export const offFocusTimerSync = (handler) => {
+  socket.off('focus:timer_sync', handler)
+}
+
+export const onFocusJoined = (handler) => {
+  socket.on('focus:joined', handler)
+}
+
+export const offFocusJoined = (handler) => {
+  socket.off('focus:joined', handler)
+}
+
 // Notifications Real-Time Socket Emitters
 export const onNewNotification = (handler) => {
   socket.on('notification:new', handler)
@@ -159,3 +232,5 @@ export const offNewNotification = (handler) => {
 }
 
 export default socket
+
+

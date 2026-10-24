@@ -49,6 +49,7 @@ export default function LibraryScene({
   onSelectDesk,
   onAvatarArrived,
   cameraMode = 'EXPLORE',
+  occupants = {},
 }) {
   const [hoveredDesk, setHoveredDesk] = useState(null)
 
@@ -78,9 +79,12 @@ export default function LibraryScene({
 
       {/* Interactive Desks & Seated Avatars */}
       {DESK_LAYOUT.map((desk, i) => {
-        const mockOccupant = MOCK_OCCUPANTS[i]
+        const hasRealOccupants = occupants && Object.keys(occupants).length > 0
+        const activeOccupant = occupants ? occupants[i] : null
+        const mockOccupant = !hasRealOccupants ? MOCK_OCCUPANTS[i] : null
+        const currentOccupant = activeOccupant || mockOccupant
         const isUserDesk = selectedDeskIndex === i
-        const isOccupied = !!mockOccupant || isUserDesk
+        const isOccupied = !!currentOccupant || isUserDesk
         const chairPulled = !isOccupied
         const chairSign = desk.chairRot[1] === 0 ? 1 : -1
 
@@ -105,18 +109,29 @@ export default function LibraryScene({
               isOn={isOccupied}
             />
 
-            {/* Other Seated Students */}
-            {mockOccupant && !isUserDesk && (
-              <StudyAvatar
-                avatarConfig={mockOccupant}
-                position={[desk.pos[0], desk.pos[1] + 0.05, desk.pos[2] + (desk.rot[1] === 0 ? 0.35 : 0) * chairSign]}
-                rotation={[0, desk.rot[1] + Math.PI, 0]}
-                isSeated={true}
-              />
+            {/* Other Seated Students (Real or Seeded) */}
+            {currentOccupant && !isUserDesk && (
+              <group>
+                <StudyAvatar
+                  avatarConfig={currentOccupant.avatarConfig || currentOccupant}
+                  position={[desk.pos[0], desk.pos[1] + 0.05, desk.pos[2] + (desk.rot[1] === 0 ? 0.35 : 0) * chairSign]}
+                  rotation={[0, desk.rot[1] + Math.PI, 0]}
+                  isSeated={true}
+                />
+                <Html
+                  position={[desk.pos[0], desk.pos[1] + 1.8, desk.pos[2]]}
+                  center
+                  distanceFactor={10}
+                >
+                  <div className="px-2 py-0.5 rounded-full bg-white/95 backdrop-blur-md border border-[#E8E0F2] text-[#493A63] text-[10px] font-bold shadow-xs whitespace-nowrap">
+                    👤 {currentOccupant.userName || currentOccupant.name || 'Student'}
+                  </div>
+                </Html>
+              </group>
             )}
 
             {/* Interactive Hitbox for Available Desks */}
-            {!mockOccupant && !isUserDesk && (
+            {!currentOccupant && !isUserDesk && (
               <group position={desk.pos}>
                 <mesh
                   position={[0, 0.5, 0]}

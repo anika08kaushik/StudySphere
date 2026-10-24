@@ -9,6 +9,7 @@ import fileRoutes from './routes/fileRoutes.js'
 import socketAuthMiddleware from './middleware/socketAuthMiddleware.js'
 import registerChatSocket from './sockets/chatSocket.js'
 import registerNotesSocket from './sockets/notesSocket.js'
+import registerFocusSocket from './sockets/focusSocket.js'
 import messageRoutes from './routes/messageRoutes.js'
 import noteRoutes from './routes/noteRoutes.js'
 import notificationRoutes from './routes/notificationRoutes.js'
@@ -17,6 +18,7 @@ import authRoutes from './routes/authRoutes.js'
 import userRoutes from './routes/userRoutes.js'
 import groupRoutes from './routes/groupRoutes.js'
 import taskRoutes from './routes/taskRoutes.js'
+import focusRoutes from './routes/focusRoutes.js'
 
 import { setNotificationIo } from './services/notificationService.js'
 import { setActivityIo } from './services/activityService.js'
@@ -30,6 +32,7 @@ app.use(express.json({ limit: '25mb' }))
 app.use(express.urlencoded({ extended: true, limit: '25mb' }))
 
 app.use('/api/tasks', taskRoutes)
+app.use('/api/focus', focusRoutes)
 // Member 4 - Resource/File APIs
 app.use('/api/files', fileRoutes)
 
@@ -73,6 +76,7 @@ io.on('connection', (socket) => {
   // Register real-time communication modules
   registerChatSocket(io, socket)
   registerNotesSocket(io, socket)
+  registerFocusSocket(io, socket)
 
   socket.on('disconnect', () => {
     console.log(`Socket disconnected: ${socket.id}`)

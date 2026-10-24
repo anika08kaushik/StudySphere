@@ -1,10 +1,9 @@
 import api from './api'
 
 const focusService = {
-  getActive: (groupId) => api.get(`/focus/${groupId}/active`),
-  startSession: (groupId) => api.post(`/focus/${groupId}/start`),
-  stopSession: (sessionId) => api.put(`/focus/${sessionId}/stop`),
-  getHistory: (groupId) => api.get(`/focus/${groupId}/history`),
+  recordSession: (data) => api.post('/focus/sessions', data),
+  getSessions: (params) => api.get('/focus/sessions', { params }),
+  getFocusStats: () => api.get('/focus/stats'),
 }
 
 export default focusService
