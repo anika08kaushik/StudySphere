@@ -86,9 +86,12 @@ export const getMessages = async (request, response) => {
       .populate('replyTo.messageId')
       .sort({ createdAt: 1 })
 
+    const devList = devMessagesStore.get(rawGroupId) || devMessagesStore.get(stringGroupId) || []
+    const combined = [...messages.map((m) => (m.toObject ? m.toObject() : m)), ...devList]
+
     response.status(200).json({
       success: true,
-      data: messages,
+      data: combined,
     })
   } catch (error) {
     console.error('Get messages error:', error)
@@ -102,10 +105,11 @@ export const getMessages = async (request, response) => {
 export const createMessage = async (request, response) => {
   try {
     const { groupId } = request.params
+    const rawGroupId = String(groupId)
+    const stringGroupId = rawGroupId === 'g1' ? '6adba5f22f2a151cd35c6192' : rawGroupId
     const { content, replyTo, mentions = [], attachments = [] } = request.body
     const userId = request.user?.userId || 'u1'
     const userName = request.user?.name || 'Classmate'
-    const stringGroupId = String(groupId)
 
     const trimmedContent = (content || '').trim()
 
@@ -135,8 +139,12 @@ export const createMessage = async (request, response) => {
         isEdited: false,
         createdAt: new Date().toISOString(),
       }
-      if (!devMessagesStore.has(stringGroupId)) devMessagesStore.set(stringGroupId, [])
-      devMessagesStore.get(stringGroupId).push(mockCreated)
+      if (!devMessagesStore.has(rawGroupId)) devMessagesStore.set(rawGroupId, [])
+      devMessagesStore.get(rawGroupId).push(mockCreated)
+      if (rawGroupId !== stringGroupId) {
+        if (!devMessagesStore.has(stringGroupId)) devMessagesStore.set(stringGroupId, [])
+        devMessagesStore.get(stringGroupId).push(mockCreated)
+      }
 
       // Trigger notifications for mentions in dev mode
       if (Array.isArray(mentions)) {

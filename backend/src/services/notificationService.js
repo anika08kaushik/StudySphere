@@ -24,11 +24,11 @@ export const createNotification = async ({
 
     let notificationObj = null
 
-    if (mongoose.connection.readyState === 1) {
+    if (mongoose.connection.readyState === 1 && mongoose.isValidObjectId(recipient)) {
       notificationObj = await Notification.create({
         recipient,
-        sender,
-        groupId,
+        sender: mongoose.isValidObjectId(sender) ? sender : null,
+        groupId: mongoose.isValidObjectId(groupId) ? groupId : null,
         type,
         title,
         message,
