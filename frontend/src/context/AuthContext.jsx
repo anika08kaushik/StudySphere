@@ -3,35 +3,91 @@ import api from '../services/api'
 
 const AuthContext = createContext(null)
 
+const getStoredToken = () =>
+  sessionStorage.getItem('studysphere_token') || localStorage.getItem('studysphere_token')
+
+const getStoredUser = () => {
+  const raw = sessionStorage.getItem('studysphere_user') || localStorage.getItem('studysphere_user')
+  try {
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null)
+  const [token, setToken] = useState(getStoredToken)
+  const [user, setUser] = useState(getStoredUser)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const token = localStorage.getItem('studysphere_token')
-    if (token) {
-      api.get('/users/profile')
-        .then((res) => setUser(res.data.data || res.data.user || res.data))
-        .catch(() => localStorage.removeItem('studysphere_token'))
+    const activeToken = getStoredToken()
+    if (activeToken) {
+      setToken(activeToken)
+      if (!sessionStorage.getItem('studysphere_token')) {
+        sessionStorage.setItem('studysphere_token', activeToken)
+      }
+      const initialUser = getStoredUser()
+      if (initialUser && !sessionStorage.getItem('studysphere_user')) {
+        sessionStorage.setItem('studysphere_user', JSON.stringify(initialUser))
+      }
+      api
+        .get('/users/profile')
+        .then((res) => {
+          const profile = res.data.data || res.data.user || res.data
+          setUser(profile)
+          if (profile) {
+            sessionStorage.setItem('studysphere_user', JSON.stringify(profile))
+            localStorage.setItem('studysphere_user', JSON.stringify(profile))
+          }
+        })
+        .catch(() => {
+          sessionStorage.removeItem('studysphere_token')
+          sessionStorage.removeItem('studysphere_user')
+          localStorage.removeItem('studysphere_token')
+          localStorage.removeItem('studysphere_user')
+          setUser(null)
+          setToken(null)
+        })
         .finally(() => setLoading(false))
     } else {
-      // Defer to avoid synchronous setState in effect
       Promise.resolve().then(() => setLoading(false))
     }
   }, [])
 
-  const login = (nextUser, token) => {
+  const login = (nextUser, nextToken) => {
     setUser(nextUser)
-    if (token) localStorage.setItem('studysphere_token', token)
+    setToken(nextToken)
+    if (nextToken) {
+      sessionStorage.setItem('studysphere_token', nextToken)
+      localStorage.setItem('studysphere_token', nextToken)
+    }
+    if (nextUser) {
+      sessionStorage.setItem('studysphere_user', JSON.stringify(nextUser))
+      localStorage.setItem('studysphere_user', JSON.stringify(nextUser))
+    }
   }
 
   const logout = () => {
     setUser(null)
+    setToken(null)
+    sessionStorage.removeItem('studysphere_token')
+    sessionStorage.removeItem('studysphere_user')
     localStorage.removeItem('studysphere_token')
+    localStorage.removeItem('studysphere_user')
   }
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, isAuthenticated: Boolean(user), loading }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        token,
+        login,
+        logout,
+        isAuthenticated: Boolean(user),
+        loading,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   )

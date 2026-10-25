@@ -3,6 +3,7 @@ import authenticate from '../middleware/authMiddleware.js'
 
 import {
   getTasks,
+  getTasksByGroup,
   getTask,
   createTask,
   updateTask,
@@ -14,9 +15,9 @@ const router = express.Router()
 router.use(authenticate)
 
 router.get('/', getTasks)
-router.get('/:id', getTask)
 router.post('/', createTask)
-router.put('/:id', updateTask)
-router.delete('/:id', deleteTask)
+router.get('/:groupId', getTasksByGroup)
+router.put('/:taskId', updateTask)
+router.delete('/:taskId', deleteTask)
 
 export default router

@@ -6,7 +6,8 @@ const api = axios.create({
 })
 
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('studysphere_token')
+  const token =
+    sessionStorage.getItem('studysphere_token') || localStorage.getItem('studysphere_token')
   if (token) config.headers.Authorization = `Bearer ${token}`
   return config
 })

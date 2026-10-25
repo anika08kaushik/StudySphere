@@ -13,16 +13,16 @@ import WalkController from '../avatars/WalkController'
 import CameraController from '../world/CameraController'
 import Decorations from './Decorations'
 import EnvironmentLighting from './EnvironmentLighting'
+import { DESK_LAYOUT } from './deskLayout'
 import { ROOM } from './materials'
 
-const DESK_LAYOUT = [
-  { id: 'desk-01', pos: [-3, 0, -1], rot: [0, 0, 0], chairRot: [0, Math.PI, 0] },
-  { id: 'desk-02', pos: [3, 0, -1], rot: [0, 0, 0], chairRot: [0, Math.PI, 0] },
-  { id: 'desk-03', pos: [-3, 0, 3], rot: [0, Math.PI, 0], chairRot: [0, 0, 0] },
-  { id: 'desk-04', pos: [3, 0, 3], rot: [0, Math.PI, 0], chairRot: [0, 0, 0] },
-  { id: 'desk-05', pos: [0, 0, 1], rot: [0, Math.PI / 2, 0], chairRot: [0, Math.PI / 2, 0] },
-  { id: 'desk-06', pos: [0, 0, 4.5], rot: [0, -Math.PI / 2, 0], chairRot: [0, -Math.PI / 2, 0] },
-]
+// Phase 11: status -> cute display metadata for the room presence labels
+const STATUS_META = {
+  STUDYING: { label: 'Focusing', emoji: '🍅', color: '#10B981', bg: '#ECFDF5' },
+  BREAK: { label: 'On Break', emoji: '☕', color: '#D97706', bg: '#FFFBEB' },
+  IDLE: { label: 'Hanging out', emoji: '✨', color: '#64748B', bg: '#F8FAFC' },
+}
+const statusMetaFor = (status) => STATUS_META[status] || STATUS_META.IDLE
 
 const BOOKSHELF_LAYOUT = [
   { pos: [-6, 0, -ROOM.depth / 2 + 0.3], rot: [0, 0, 0], seed: 10 },
@@ -49,6 +49,8 @@ export default function LibraryScene({
   onSelectDesk,
   onAvatarArrived,
   cameraMode = 'EXPLORE',
+  occupants = {},
+  isSeatedInitial = false,
 }) {
   const [hoveredDesk, setHoveredDesk] = useState(null)
 
@@ -78,9 +80,14 @@ export default function LibraryScene({
 
       {/* Interactive Desks & Seated Avatars */}
       {DESK_LAYOUT.map((desk, i) => {
-        const mockOccupant = MOCK_OCCUPANTS[i]
+        const hasRealOccupants = occupants && Object.keys(occupants).length > 0
+        const activeOccupant = occupants ? occupants[i] : null
+        const mockOccupant = !hasRealOccupants ? MOCK_OCCUPANTS[i] : null
+        const currentOccupant = activeOccupant || mockOccupant
         const isUserDesk = selectedDeskIndex === i
-        const isOccupied = !!mockOccupant || isUserDesk
+        // Mock occupants are always focused; real occupants carry a live status
+        const meta = statusMetaFor(mockOccupant ? 'STUDYING' : currentOccupant?.status)
+        const isOccupied = !!currentOccupant || isUserDesk
         const chairPulled = !isOccupied
         const chairSign = desk.chairRot[1] === 0 ? 1 : -1
 
@@ -105,18 +112,48 @@ export default function LibraryScene({
               isOn={isOccupied}
             />
 
-            {/* Other Seated Students */}
-            {mockOccupant && !isUserDesk && (
-              <StudyAvatar
-                avatarConfig={mockOccupant}
-                position={[desk.pos[0], desk.pos[1] + 0.05, desk.pos[2] + (desk.rot[1] === 0 ? 0.35 : 0) * chairSign]}
-                rotation={[0, desk.rot[1] + Math.PI, 0]}
-                isSeated={true}
-              />
+            {/* Other Seated Students (Real or Seeded) */}
+            {currentOccupant && !isUserDesk && (
+              <group>
+                <StudyAvatar
+                  avatarConfig={currentOccupant.avatarConfig || currentOccupant}
+                  position={[desk.pos[0], desk.pos[1] + 0.05, desk.pos[2] + (desk.rot[1] === 0 ? 0.35 : 0) * chairSign]}
+                  rotation={[0, desk.rot[1] + Math.PI, 0]}
+                  isSeated={true}
+                />
+                {/* Phase 11: cute, clearly visible name + status label */}
+                <Html
+                  position={[desk.pos[0], desk.pos[1] + 1.95, desk.pos[2]]}
+                  center
+                  distanceFactor={9}
+                  zIndexRange={[20, 0]}
+                >
+                  <div
+                    className="px-2.5 py-1 rounded-2xl bg-white/95 backdrop-blur-md border-2 shadow-sm whitespace-nowrap flex items-center gap-1"
+                    style={{ borderColor: meta.color }}
+                  >
+                    <span
+                      className="w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-black text-white"
+                      style={{ backgroundColor: currentOccupant.avatarConfig?.outfitColor || currentOccupant.outfitColor || '#9B7EDB' }}
+                    >
+                      {(currentOccupant.userName || currentOccupant.name || 'S').charAt(0).toUpperCase()}
+                    </span>
+                    <span className="text-[#493A63] text-[10px] font-extrabold">
+                      {currentOccupant.userName || currentOccupant.name || 'Student'}
+                    </span>
+                    <span
+                      className="px-1.5 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wide flex items-center gap-0.5"
+                      style={{ backgroundColor: meta.bg, color: meta.color }}
+                    >
+                      {meta.emoji} {meta.label}
+                    </span>
+                  </div>
+                </Html>
+              </group>
             )}
 
             {/* Interactive Hitbox for Available Desks */}
-            {!mockOccupant && !isUserDesk && (
+            {!currentOccupant && !isUserDesk && (
               <group position={desk.pos}>
                 <mesh
                   position={[0, 0.5, 0]}
@@ -130,7 +167,9 @@ export default function LibraryScene({
                   }}
                   onClick={(e) => {
                     e.stopPropagation()
-                    if (onSelectDesk) onSelectDesk(i)
+                    if ((typeof e.delta !== 'number' || e.delta <= 5) && onSelectDesk) {
+                      onSelectDesk(i)
+                    }
                   }}
                 >
                   <boxGeometry args={[1.4, 1.1, 0.8]} />
@@ -193,9 +232,11 @@ export default function LibraryScene({
       {/* User's Walking / Seated Avatar */}
       {selectedDeskIndex !== null && (
         <WalkController
+          key={`${DESK_LAYOUT[selectedDeskIndex].id}-${isSeatedInitial ? 'restored' : 'new'}`}
           avatarConfig={userAvatarConfig}
           targetDesk={DESK_LAYOUT[selectedDeskIndex]}
           onArrived={onAvatarArrived}
+          isSeatedInitial={isSeatedInitial}
         />
       )}
 
@@ -208,4 +249,3 @@ export default function LibraryScene({
     </>
   )
 }
-

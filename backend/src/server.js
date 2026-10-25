@@ -8,26 +8,46 @@ import connectDatabase from './config/db.js'
 import fileRoutes from './routes/fileRoutes.js'
 import socketAuthMiddleware from './middleware/socketAuthMiddleware.js'
 import registerChatSocket from './sockets/chatSocket.js'
+import registerNotesSocket from './sockets/notesSocket.js'
+import registerFocusSocket from './sockets/focusSocket.js'
 import messageRoutes from './routes/messageRoutes.js'
+import noteRoutes from './routes/noteRoutes.js'
+import notificationRoutes from './routes/notificationRoutes.js'
+import activityRoutes from './routes/activityRoutes.js'
 import authRoutes from './routes/authRoutes.js'
 import userRoutes from './routes/userRoutes.js'
 import groupRoutes from './routes/groupRoutes.js'
 import taskRoutes from './routes/taskRoutes.js'
+import focusRoutes from './routes/focusRoutes.js'
+import privateChatRoutes from './routes/privateChatRoutes.js'
+import calendarEventRoutes from './routes/calendarEventRoutes.js'
+
+import { setNotificationIo } from './services/notificationService.js'
+import { setActivityIo } from './services/activityService.js'
+import { setPrivateChatIo } from './services/privateChatService.js'
 
 const app = express()
 const httpServer = http.createServer(app)
 const port = process.env.PORT || 5000
 
 app.use(cors({ origin: process.env.CLIENT_URL || 'http://localhost:5173' }))
-app.use(express.json())
-
+app.use(express.json({ limit: '25mb' }))
+app.use(express.urlencoded({ extended: true, limit: '25mb' }))
 
 app.use('/api/tasks', taskRoutes)
+app.use('/api/focus', focusRoutes)
+// Member 3 - private chat requests & direct messages from focus rooms
+app.use('/api/private-chat', privateChatRoutes)
+// Member 3 - persistent calendar events with emoji mood
+app.use('/api/calendar', calendarEventRoutes)
 // Member 4 - Resource/File APIs
 app.use('/api/files', fileRoutes)
 
-// Member 2 - Chat/Messaging APIs
+// Member 2 - Collaboration, Chat, Collaborative Notes, Notifications & Activity APIs
 app.use('/api', messageRoutes)
+app.use('/api', noteRoutes)
+app.use('/api/notifications', notificationRoutes)
+app.use('/api/activities', activityRoutes)
 
 // Member 1 - Authentication, Users & Groups APIs
 app.use('/api/auth', authRoutes)
@@ -43,14 +63,28 @@ app.get('/api/health', (_request, response) => {
 
 const io = new Server(httpServer, {
   cors: { origin: process.env.CLIENT_URL || 'http://localhost:5173' },
+  maxHttpBufferSize: 1e8,
 })
 
 io.use(socketAuthMiddleware)
 
+// Initialize notification & activity real-time socket emitters
+setNotificationIo(io)
+setActivityIo(io)
+setPrivateChatIo(io)
+
 io.on('connection', (socket) => {
   console.log(`Socket connected: ${socket.id}`)
 
+  // Personal user notification room
+  if (socket.user?.userId) {
+    socket.join(`user:${socket.user.userId}`)
+  }
+
+  // Register real-time communication modules
   registerChatSocket(io, socket)
+  registerNotesSocket(io, socket)
+  registerFocusSocket(io, socket)
 
   socket.on('disconnect', () => {
     console.log(`Socket disconnected: ${socket.id}`)

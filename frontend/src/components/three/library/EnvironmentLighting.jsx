@@ -5,8 +5,8 @@ export default function EnvironmentLighting() {
 
   return (
     <>
-      {/* Warm ambient light for soft light room atmosphere */}
-      <ambientLight intensity={0.7} color="#FFF9EE" />
+      {/* Warm ambient light for a cozy, brighter room so avatars pop (Phase 11) */}
+      <ambientLight intensity={0.85} color="#FFF9EE" />
 
       {/* Warm sunlight streaming through window */}
       <directionalLight
@@ -25,8 +25,10 @@ export default function EnvironmentLighting() {
       />
 
       {/* Cozy fill lighting */}
-      <pointLight position={[-4, 3.2, -4]} intensity={0.4} color="#F6D98B" distance={8} decay={2} />
-      <pointLight position={[4, 3.2, -4]} intensity={0.4} color="#F6D98B" distance={8} decay={2} />
+      <pointLight position={[-4, 3.2, -4]} intensity={0.55} color="#F6D98B" distance={9} decay={2} />
+      <pointLight position={[4, 3.2, -4]} intensity={0.55} color="#F6D98B" distance={9} decay={2} />
+      {/* Soft pink accent so seated avatars are readable against the lavender floor */}
+      <pointLight position={[0, 3.4, 2.5]} intensity={0.35} color="#E9DFFF" distance={10} decay={2} />
 
       {/* Soft lavender fog transition */}
       <fog attach="fog" args={['#F8F5FF', 14, 32]} />

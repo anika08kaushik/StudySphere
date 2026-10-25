@@ -1,7 +1,7 @@
 import api from './api'
 
 const taskService = {
-  getTasks: (groupId) => api.get('/tasks', { params: { groupId } }),
+  getTasks: (groupId) => (groupId ? api.get(`/tasks/${groupId}`) : api.get('/tasks')),
   getTask: (id) => api.get(`/tasks/${id}`),
   createTask: (data) => api.post('/tasks', data),
   updateTask: (id, data) => api.put(`/tasks/${id}`, data),
