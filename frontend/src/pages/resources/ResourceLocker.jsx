@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import fileService from '../../services/fileService'
 import groupService from '../../services/groupService'
 
@@ -10,15 +10,38 @@ const FILE_ICONS = {
   default: { icon: '📁', bg: 'bg-[#F8F5FF]', text: 'text-[#493A63]', border: 'border-[#E8E0F2]' },
 }
 
-const getGroupId = (group) => String(group.id || group._id || '')
+const getGroupId = (group) => String(group._id || '')
+
+const getResponseMessage = async (error) => {
+  const responseData = error.response?.data
+  if (responseData && typeof responseData.text === 'function') {
+    const responseText = await responseData.text()
+    try {
+      return JSON.parse(responseText).message || responseText
+    } catch {
+      return responseText
+    }
+  }
+
+  return responseData?.message || error.message || 'Request failed.'
+}
+
+const describeRequestError = async (label, error) => {
+  const status = error.response?.status
+  const message = await getResponseMessage(error)
+  return `${label}${status ? ` (HTTP ${status})` : ''}: ${message}`
+}
 
 export default function ResourceLocker({ groupId }) {
   const [availableGroups, setAvailableGroups] = useState([])
   const [selectedGroupId, setSelectedGroupId] = useState(groupId || '')
   const [fileList, setFileList] = useState([])
+  const [searchResults, setSearchResults] = useState(null)
   const [folders, setFolders] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [resourceErrors, setResourceErrors] = useState([])
+  const [searchError, setSearchError] = useState('')
   const [activeFolder, setActiveFolder] = useState(null)
   const [search, setSearch] = useState('')
   const [showUploadModal, setShowUploadModal] = useState(false)
@@ -30,7 +53,7 @@ export default function ResourceLocker({ groupId }) {
 
   // Upload Form State
   const [selectedFile, setSelectedFile] = useState(null)
-  const activeGroupId = groupId || selectedGroupId
+  const activeGroupId = String(groupId || selectedGroupId || '').trim()
 
   useEffect(() => {
     if (groupId) return
@@ -43,7 +66,7 @@ export default function ResourceLocker({ groupId }) {
         setSelectedGroupId((currentGroupId) => currentGroupId || getGroupId(groups[0] || {}))
         if (groups.length === 0) setLoading(false)
       } catch (groupsError) {
-        setError(groupsError.response?.data?.message || 'Unable to load your study groups.')
+        setError(await describeRequestError('Groups request', groupsError))
         setLoading(false)
       }
     }
@@ -54,25 +77,65 @@ export default function ResourceLocker({ groupId }) {
   useEffect(() => {
     if (!activeGroupId) return
 
-    const loadResources = async () => {
-      setLoading(true)
-      setError('')
-      try {
-        const [filesResponse, foldersResponse] = await Promise.all([
-          fileService.getFiles(activeGroupId),
-          fileService.getFolders(activeGroupId),
-        ])
-        setFileList(filesResponse.data.data || [])
-        setFolders(foldersResponse.data.data || [])
-      } catch (loadError) {
-        setError(loadError.response?.data?.message || 'Unable to load resources.')
-      } finally {
-        setLoading(false)
-      }
-    }
+    let cancelled = false
+    const query = search.trim()
 
-    loadResources()
-  }, [activeGroupId])
+    if (!query) return undefined
+
+    const timeoutId = setTimeout(async () => {
+      try {
+        const response = await fileService.searchFiles(activeGroupId, query)
+        if (cancelled) return
+        setSearchResults(response.data.data.files || [])
+        setSearchError('')
+      } catch (searchRequestError) {
+        if (cancelled) return
+        setSearchResults([])
+        setSearchError(await describeRequestError('Search request', searchRequestError))
+      }
+    }, 250)
+
+    return () => {
+      cancelled = true
+      clearTimeout(timeoutId)
+    }
+  }, [activeGroupId, search])
+
+  const loadResources = useCallback(async (groupToLoad, isCancelled) => {
+    const [filesResult, foldersResult] = await Promise.allSettled([
+      fileService.getFiles(groupToLoad),
+      fileService.getFolders(groupToLoad),
+    ])
+    if (isCancelled()) return
+
+    setError('')
+    setSearchResults(null)
+    const nextErrors = []
+    if (filesResult.status === 'fulfilled') {
+      setFileList(filesResult.value.data.data || [])
+    } else {
+      nextErrors.push(await describeRequestError('Files request', filesResult.reason))
+    }
+    if (foldersResult.status === 'fulfilled') {
+      setFolders(foldersResult.value.data.data || [])
+    } else {
+      nextErrors.push(await describeRequestError('Folders request', foldersResult.reason))
+    }
+    setResourceErrors(nextErrors)
+    setLoading(false)
+  }, [])
+
+  useEffect(() => {
+    if (!activeGroupId) return
+    let cancelled = false
+    const timeoutId = setTimeout(() => {
+      loadResources(activeGroupId, () => cancelled)
+    }, 0)
+    return () => {
+      cancelled = true
+      clearTimeout(timeoutId)
+    }
+  }, [activeGroupId, loadResources])
 
   const handleUploadFile = async (e) => {
     e.preventDefault()
@@ -80,40 +143,40 @@ export default function ResourceLocker({ groupId }) {
       setUploadError('Please select a file before uploading.')
       return
     }
-    if (!activeGroupId) {
+    if (!activeGroupId || activeGroupId.trim() === '') {
       setUploadError('Select a study group before uploading.')
       return
     }
 
     const formData = new FormData()
     formData.append('file', selectedFile)
-    formData.append('groupId', activeGroupId)
+    formData.append('groupId', String(activeGroupId).trim())
     if (activeFolder) formData.append('folderId', activeFolder)
 
     try {
       setUploading(true)
       setUploadError('')
       setError('')
-      const response = await fileService.uploadFile(formData)
+      const response = await fileService.uploadFile(formData, activeGroupId)
       setFileList((prev) => [response.data.data, ...prev])
+      setSearchResults(null)
+      setSearch('')
       setSelectedFile(null)
       setShowUploadModal(false)
     } catch (uploadError) {
-      const message = uploadError.response?.data?.message || 'Unable to upload resource.'
-      setUploadError(message)
-      setError(message)
+      setUploadError(await describeRequestError('Upload request', uploadError))
     } finally {
       setUploading(false)
     }
   }
-
   const handleDeleteFile = async (fileId, e) => {
     e.stopPropagation()
     try {
-      await fileService.deleteFile(fileId)
+      await fileService.deleteFile(fileId, activeGroupId)
       setFileList((prev) => prev.filter((f) => f._id !== fileId))
+      setError('')
     } catch (deleteError) {
-      setError(deleteError.response?.data?.message || 'Unable to delete resource.')
+      setError(await describeRequestError('Delete request', deleteError))
     }
   }
 
@@ -122,13 +185,27 @@ export default function ResourceLocker({ groupId }) {
     setPreviewUrl('')
     setPreviewLoading(true)
     try {
-      const response = await fileService.getFileMeta(file._id)
+      const response = await fileService.getFileMeta(file._id, activeGroupId)
       setPreviewUrl(URL.createObjectURL(response.data))
     } catch (previewError) {
-      setError(previewError.response?.data?.message || 'Unable to retrieve resource.')
+      setError(await describeRequestError('Preview request', previewError))
       setPreviewFile(null)
     } finally {
       setPreviewLoading(false)
+    }
+  }
+
+  const handleDownloadFile = async (file) => {
+    try {
+      const response = await fileService.downloadFile(file._id, activeGroupId)
+      const downloadUrl = URL.createObjectURL(response.data)
+      const link = document.createElement('a')
+      link.href = downloadUrl
+      link.download = file.originalName || file.name
+      link.click()
+      window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000)
+    } catch (downloadError) {
+      setError(await describeRequestError('Download request', downloadError))
     }
   }
 
@@ -138,11 +215,10 @@ export default function ResourceLocker({ groupId }) {
     setPreviewUrl('')
   }
 
-  const filteredFiles = fileList.filter((f) => {
+  const filteredFiles = (searchResults ?? fileList).filter((f) => {
     const folderId = typeof f.folderId === 'object' ? f.folderId?._id : f.folderId
     const matchesFolder = activeFolder ? folderId === activeFolder : true
-    const matchesSearch = f.name.toLowerCase().includes(search.toLowerCase())
-    return matchesFolder && matchesSearch
+    return matchesFolder
   })
 
   return (
@@ -158,12 +234,20 @@ export default function ResourceLocker({ groupId }) {
           <select
             id="resource-group"
             value={selectedGroupId}
-            onChange={(e) => { setSelectedGroupId(e.target.value); setActiveFolder(null) }}
+            onChange={(e) => {
+              setLoading(true)
+              setFileList([])
+              setFolders([])
+              setSearchResults(null)
+              setSearchError('')
+              setSearch('')
+              setSelectedGroupId(e.target.value)
+              setActiveFolder(null)
+            }}
             className="px-3.5 py-2 rounded-xl border border-[#E8E0F2] bg-white text-[#493A63] font-semibold text-sm focus:outline-none focus:border-[#9B7EDB]"
           >
             {availableGroups.map((group) => {
-              const id = getGroupId(group)
-              return <option key={id} value={id}>{group.name}</option>
+              return <option key={group._id} value={group._id}>{group.name}</option>
             })}
           </select>
         </div>
@@ -197,7 +281,14 @@ export default function ResourceLocker({ groupId }) {
             type="text"
             placeholder="Search study materials & files..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value)
+              if (!e.target.value.trim()) {
+                setSearchResults(null)
+                setSearchError('')
+              }
+            }}
+            aria-label="Search study materials and files"
             className="w-full max-w-md px-4 py-2.5 rounded-xl border border-[#E8E0F2] bg-white text-[#493A63] font-semibold text-sm focus:outline-none focus:border-[#9B7EDB] shadow-xs"
           />
         </div>
@@ -239,8 +330,17 @@ export default function ResourceLocker({ groupId }) {
       {/* File List */}
       <div className="space-y-3">
         {loading && <div className="card-soft p-12 text-center bg-white border-[#E8E0F2]"><p className="text-sm font-semibold text-[#776B88]">Loading resources...</p></div>}
-        {!loading && error && <div className="card-soft p-4 text-center bg-rose-50 border border-rose-200"><p className="text-sm font-semibold text-rose-600">{error}</p></div>}
-        {!loading && !error && filteredFiles.map((f) => {
+        {!loading && [...resourceErrors, error].filter(Boolean).map((message) => (
+          <div key={message} className="card-soft p-4 text-center bg-rose-50 border border-rose-200">
+            <p className="text-sm font-semibold text-rose-600">{message}</p>
+          </div>
+        ))}
+        {!loading && searchError && (
+          <div className="card-soft p-4 text-center bg-rose-50 border border-rose-200">
+            <p className="text-sm font-semibold text-rose-600">{searchError}</p>
+          </div>
+        )}
+        {!loading && filteredFiles.map((f) => {
           const fileType = f.mimeType?.split('/').pop() === 'pdf' ? 'pdf' : f.name.split('.').pop()?.toLowerCase()
           const style = FILE_ICONS[fileType] || FILE_ICONS.default
           return (
@@ -282,7 +382,7 @@ export default function ResourceLocker({ groupId }) {
           )
         })}
 
-        {!loading && !error && filteredFiles.length === 0 && (
+        {!loading && !resourceErrors.length && !error && filteredFiles.length === 0 && (
           <div className="card-soft p-12 text-center bg-white border-[#E8E0F2]">
             <p className="text-sm font-semibold text-[#776B88]">No resources found in this folder.</p>
           </div>
@@ -367,9 +467,9 @@ export default function ResourceLocker({ groupId }) {
                 <p className="text-xs text-[#776B88] font-semibold">Resource retrieved and ready to download.</p>
               )}
               {previewUrl && (
-                <a href={previewUrl} download={previewFile.originalName || previewFile.name} className="inline-block text-[11px] text-[#9B7EDB] font-bold hover:underline">
+                <button onClick={() => handleDownloadFile(previewFile)} className="inline-block text-[11px] text-[#9B7EDB] font-bold hover:underline">
                   Download {previewFile.name}
-                </a>
+                </button>
               )}
             </div>
 
@@ -387,4 +487,3 @@ export default function ResourceLocker({ groupId }) {
     </div>
   )
 }
-
