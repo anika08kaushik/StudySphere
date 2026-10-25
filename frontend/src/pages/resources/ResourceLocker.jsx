@@ -10,7 +10,7 @@ const FILE_ICONS = {
   default: { icon: '📁', bg: 'bg-[#F8F5FF]', text: 'text-[#493A63]', border: 'border-[#E8E0F2]' },
 }
 
-const getGroupId = (group) => String(group._id || '')
+const getGroupId = (group) => String(group.id || group._id || '')
 
 const getResponseMessage = async (error) => {
   const responseData = error.response?.data
@@ -247,7 +247,8 @@ export default function ResourceLocker({ groupId }) {
             className="px-3.5 py-2 rounded-xl border border-[#E8E0F2] bg-white text-[#493A63] font-semibold text-sm focus:outline-none focus:border-[#9B7EDB]"
           >
             {availableGroups.map((group) => {
-              return <option key={group._id} value={group._id}>{group.name}</option>
+              const id = getGroupId(group)
+              return <option key={id} value={id}>{group.name}</option>
             })}
           </select>
         </div>
