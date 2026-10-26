@@ -1,4 +1,5 @@
 const allowedMimeTypes = new Set([
+  'text/plain',
   'application/pdf',
 
   'application/msword',
