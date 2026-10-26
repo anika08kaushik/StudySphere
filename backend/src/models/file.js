@@ -46,6 +46,41 @@ const fileSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
+
+    sharedWith: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    }],
+
+    permissions: {
+      type: [String],
+      default: ["view", "download"],
+    },
+
+    version: {
+      type: Number,
+      default: 1,
+    },
+
+    versionHistory: [
+      {
+        version: Number,
+        uploadedBy: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "User",
+        },
+        changedAt: {
+          type: Date,
+          default: Date.now,
+        },
+        changeType: {
+          type: String,
+          enum: ["upload", "update", "restore"],
+          default: "update",
+        },
+        comment: String,
+      },
+    ],
   },
   {
     timestamps: true,
