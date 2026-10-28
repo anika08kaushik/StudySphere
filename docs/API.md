@@ -56,6 +56,18 @@ All group routes require authentication.
 
 Invitations are represented by pending memberships. Invitees must have a registered account and accept before becoming an active member. Leaders cannot leave or be removed when they are the group's only active leader.
 
+## Productivity, Focus & Calendar (Member 3)
+
+Detailed specification for Focus Rooms, persistent timers, 365-day heatmaps, Calendar events with mood emojis, and peer direct messaging is documented in [PRODUCTIVITY.md](./PRODUCTIVITY.md).
+
+- `/api/focus/sessions` (POST, GET): Record and inspect completed focus sessions.
+- `/api/focus/stats` (GET): Daily streak, total minutes, and activity summary.
+- `/api/focus/timer` (POST, GET, DELETE): Persist and synchronize running focus timers across refreshes.
+- `/api/focus/report` (GET): Aggregate productivity metrics and 365-day heatmap history.
+- `/api/calendar/events` (GET, POST, PATCH, DELETE): Manage persistent calendar events with custom emoji tags.
+- `/api/private-chat/requests` (POST, GET): Real-time peer connection invites in focus rooms.
+- `/api/private-chat/dm/:peerId/messages` (GET, POST): Direct messaging between study peers.
+
 ## Local setup and seed data
 
 Copy `backend/.env.example` to `backend/.env`, then set `MONGO_URI` to a valid MongoDB connection string and `JWT_SECRET` to a private random secret. For MongoDB Atlas, create a database user, allow the development machine's IP in Network Access, and URL-encode special characters in the password portion of the URI. Do not place real credentials in `.env.example` or commit `.env`.
