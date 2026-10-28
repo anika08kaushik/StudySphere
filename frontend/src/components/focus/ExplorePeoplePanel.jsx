@@ -11,6 +11,17 @@ import socket, {
 
 // Phase 9: Explore People - discover room members, connect, chat live.
 // Requests and messages are persisted server-side, so history survives refresh.
+/**
+ * ExplorePeoplePanel
+ *
+ * Phase 9: Discover room members, connect, and chat live in real-time.
+ * Requests and messages are persisted server-side, surviving page refresh.
+ *
+ * @param {Object} props
+ * @param {Array<Object>} props.participants - Active room members
+ * @param {string} props.selectedGroupId - Active group room ID
+ * @param {() => void} props.onClose - Modal close handler
+ */
 export default function ExplorePeoplePanel({ participants, selectedGroupId, onClose }) {
   const [incoming, setIncoming] = useState([])
   const [partners, setPartners] = useState([])
@@ -101,13 +112,15 @@ export default function ExplorePeoplePanel({ participants, selectedGroupId, onCl
     const handleUpdate = () => {
       reloadRequests()
     }
+    onChatRequestNew(handleUpdate)
     onChatRequestUpdate(handleUpdate)
     onDmNew(handleDmNew)
     return () => {
+      offChatRequestNew(handleUpdate)
       offChatRequestUpdate(handleUpdate)
       offDmNew(handleDmNew)
     }
-  }, [reloadRequests])
+  }, [reloadRequests, handleDmNew])
 
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' })

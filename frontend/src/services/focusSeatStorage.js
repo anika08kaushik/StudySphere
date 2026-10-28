@@ -1,3 +1,9 @@
+/**
+ * Focus Seat Storage Service
+ *
+ * Persists user seat preferences across focus room sessions using localStorage.
+ * Provides sync external store hook for reactive cross-tab and component state.
+ */
 import { useCallback, useMemo, useSyncExternalStore } from 'react'
 
 const FOCUS_SEAT_CHANGE_EVENT = 'studysphere:focus-seat-change'
