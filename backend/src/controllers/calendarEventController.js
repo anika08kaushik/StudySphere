@@ -7,7 +7,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
 // Validate and normalize the writable fields of an event payload.
 // partial=true (PATCH): title/date become optional and may be omitted.
-const sanitizeEventInput = (body = {}, partial = false) => {
+export const sanitizeEventInput = (body = {}, partial = false) => {
   const errors = []
   const out = {}
 
